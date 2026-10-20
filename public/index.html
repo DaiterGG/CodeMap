@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codebase graph</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font: 15px/1.5 system-ui, sans-serif;
+      color: #202833;
+      background: #f4f6f8;
+    }
+    body { margin: 0; }
+    main { padding: 24px; }
+    h1 { margin: 0 0 16px; font-size: 20px; }
+    .canvas {
+      overflow: auto;
+      min-height: 70vh;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      background-color: #fff;
+      background-image: radial-gradient(#d8dee4 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    svg { display: block; }
+    .edge { stroke: #57606a; stroke-width: 2; fill: none; }
+    .edge.dotted { stroke-dasharray: 5 5; }
+    .edge-label { fill: #57606a; font-size: 12px; }
+    .node rect { fill: #fff; stroke: #0969da; stroke-width: 2; rx: 8; }
+    .node-title { fill: #202833; font-size: 15px; font-weight: 650; }
+    .node-description { fill: #57606a; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Codebase graph</h1>
+    <div class="canvas">{{SVG}}</div>
+  </main>
+</body>
+</html>

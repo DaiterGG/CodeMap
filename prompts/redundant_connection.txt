@@ -1,0 +1,2 @@
+Error
+The graph contains a redundant connection described below. Remove only the duplicate connection while keeping distinct relationships. Return only the corrected graph, with no explanation or Markdown fences.

@@ -1,0 +1,2 @@
+Error
+The previous graph has a syntax or structure problem described below. Correct the reported issue while preserving valid content. Regenerate the complete graph. Return only the corrected graph, with no explanation or Markdown fences.

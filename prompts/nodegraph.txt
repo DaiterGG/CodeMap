@@ -1,0 +1,57 @@
+Create a concise graph of the codebase. Follow these syntax rules:
+- Start with `graph TD` or `graph LR`.
+- Use unique UpperCamelCase IDs containing only letters and digits for every node. Never use reserved IDs such as `end`.
+- Node labels may contain a `<name>...</name>`, a `<desc>...</desc>`, or both in that order. Omit either tag when it would be redundant or the operation is self-explanatory; include both when they add useful context.
+- Use `-->` for one-way flow, `<-->` for genuine two-way interaction, and `---` for a relationship with no direction. Choose the connector that matches the code; do not add bidirectional or undirected links just for appearance.
+- Return only output: no Markdown fences, preamble, or explanation.
+
+Example of a simple graph:
+graph LR
+    Input["<name>Input</name><desc>Parse input</desc>"] --> Processor["<name>Processor module</name><desc>Run calculations</desc>"]
+    Processor <-->|Network call| Service["<name>Service API</name><desc>Provide data</desc>"]
+    Processor --- Config["<name>Configuration file</name><desc>Set application options</desc>"]
+    Processor --> Output["<name>Program output</name><desc>Write files to disk</desc>"]
+
+Example of the same graph with node declarations and connections written separately:
+graph LR
+    Input["<name>Input</name><desc>Parse input</desc>"]
+    Processor["<name>Processor module</name><desc>Run calculations</desc>"]
+    Service["<name>Service API</name><desc>Provide data</desc>"]
+    Config["<name>Configuration file</name><desc>Set application options</desc>"]
+    Output["<name>Program output</name><desc>Write files to disk</desc>"]
+    Input --> Processor
+    Processor <-->|Network call| Service
+    Processor --- Config
+    Processor --> Output
+
+Follow the strict syntax; use actual modules and data flow from the codebase.
+
+Process the codebase into nodegraph with these rulles:
+- Use `<name>...</name>`, `<desc>...</desc>`, or both in a node label. For example, a familiar concept can use only a name, while a single operation can use only a description:
+  graph LR
+      MainLoop["<name>Main loop</name>"] --> WriteOutput["<desc>Writes output to file</desc>"]
+- connections can have labels if they represents something other than simple code flow, like: <-->|DB request| or <-->|Hashmap lookup|. Or if they can clarify relation of nodes by specifying passed data passed, like -->|Calculated offset|
+- nodes should represent execution code, not data structures
+- ideal range of nodes is 10 to 30, lower if codebase is really small. Try to merge nodes that could be described as one node
+- nodes should be connected, with code execution order in mind. If codebase is one program, all nodes are connected in one graph with one entry point
+- Major code loops can create loops in the graph. For example, a desktop application's frame loop can be represented as:
+  graph LR
+      PollEvents["<name>Poll events</name><desc>Handle pending input and window events</desc>"]
+      UpdateState["<name>Update state</name><desc>Advance application state</desc>"]
+      RenderFrame["<name>Render frame</name><desc>Draw the current state</desc>"]
+      PresentFrame["<name>Present frame</name><desc>Display the rendered frame</desc>"]
+      PollEvents --> UpdateState --> RenderFrame --> PresentFrame --> PollEvents
+  Use this pattern only when the code actually implements such a loop; represent the real operations in their execution order.
+- modes that calls multiple other modules/operations in a sequence can create branches in a graph
+- unused or unconnected parts of the code can be omitted or has to explicitly marked as unused in the label of the connection or the name of the node
+- network or external calls can create graph leaves that are not connected to anything else, with bidirectional connection
+- Use dotted line connections (`-.->`) for optional paths. For a call guarded by a condition, label the condition:
+  graph LR
+      CheckCache["<name>Check cache</name><desc>Test whether cached data is available</desc>"]
+      FetchData["<name>Fetch data</name><desc>Call the service when the cache misses</desc>"]
+      CheckCache -.->|if cache miss| FetchData
+- For an operation guarded by an existence check, connect the check to the operation only when the item exists:
+  graph LR
+      CheckConfig["<name>Check configuration</name><desc>Test whether the configuration file exists</desc>"]
+      LoadConfig["<name>Load configuration</name><desc>Read the configuration file</desc>"]
+      CheckConfig -.->|if file exists| LoadConfig
