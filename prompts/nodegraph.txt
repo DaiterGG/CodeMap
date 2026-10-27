@@ -1,57 +1,69 @@
 Create a concise graph of the codebase. Follow these syntax rules:
-- Start with `graph TD` or `graph LR`.
+- Wrap the graph in `<graph type="TD|LR" name="..." desc="...">` and `</graph>`. Use `TD` or `LR` for direction; `desc` are optional.
 - Use unique UpperCamelCase IDs containing only letters and digits for every node. Never use reserved IDs such as `end`.
-- Node labels may contain a `<name>...</name>`, a `<desc>...</desc>`, or both in that order. Omit either tag when it would be redundant or the operation is self-explanatory; include both when they add useful context.
-- Use `-->` for one-way flow, `<-->` for genuine two-way interaction, and `---` for a relationship with no direction. Choose the connector that matches the code; do not add bidirectional or undirected links just for appearance.
+- Node labels contain a `<name>...</name>`, a `<desc>...</desc>`. Either can be omitted, but not both.
+- Every node label must also contain a `<source>...</source>` tag with one or more comma-separated `path:range` references to the source files supporting that node. Use `path:full` for a whole file or `path:start-end` for an inclusive line range. Use only paths present in the provided codebase, and choose ranges that match the node's behavior.
+- Declare nodes inline with connections where practical. Nodes may also be declared on separate lines, but declare each node exactly once.
+- There is node connections: `-->`, `<-->`, `<--`, `---` and dotter variants `-.->`, `<-.->`, `<-.-`, `-.-`
+- Connection can have label: `-->|Rpc call|'
 - Return only output: no Markdown fences, preamble, or explanation.
 
-Example of a simple graph:
-graph LR
-    Input["<name>Input</name><desc>Parse input</desc>"] --> Processor["<name>Processor module</name><desc>Run calculations</desc>"]
-    Processor <-->|Network call| Service["<name>Service API</name><desc>Provide data</desc>"]
-    Processor --- Config["<name>Configuration file</name><desc>Set application options</desc>"]
-    Processor --> Output["<name>Program output</name><desc>Write files to disk</desc>"]
+Example of a simple graph generated from the codebase:
+<graph type="LR" name="Custom data processor layer" desc="Input output layer, that checks data against groundtruth, received from the api">
+    Input["<name>Input</name><desc>Parse input</desc><source>src/main.cpp:full,src/processor.cpp:1-140</source>"] --> Processor["<name>Processor module</name><desc>Run calculations</desc><source>src/processor.cpp:141-332</source>"]
+    Processor --- Config["<name>Configuration file</name><desc>Set application options</desc><source>config/processor.toml:full</source>"]
+    Processor <-->|Network call| Service["<name>Service API</name><desc>Provide data</desc><source>src/service_client.cpp:45-118</source>"]
+    Processor --> Output["<name>Program output</name><desc>Write files to disk</desc><source>src/output_writer.cpp:1-96</source>"]
+</graph>
 
 Example of the same graph with node declarations and connections written separately:
-graph LR
-    Input["<name>Input</name><desc>Parse input</desc>"]
-    Processor["<name>Processor module</name><desc>Run calculations</desc>"]
-    Service["<name>Service API</name><desc>Provide data</desc>"]
-    Config["<name>Configuration file</name><desc>Set application options</desc>"]
-    Output["<name>Program output</name><desc>Write files to disk</desc>"]
+<graph type="LR" name="Custom data processor layer" desc="Input output layer, that checks data against groundtruth, received from the api">
+    Input["<name>Input</name><desc>Parse input</desc><source>src/main.cpp:full,src/processor.cpp:1-140</source>"]
+    Processor["<name>Processor module</name><desc>Run calculations</desc><source>src/processor.cpp:141-332</source>"]
+    Service["<name>Service API</name><desc>Provide data</desc><source>src/service_client.cpp:45-118</source>"]
+    Config["<name>Configuration file</name><desc>Set application options</desc><source>config/processor.toml:full</source>"]
+    Output["<name>Program output</name><desc>Write files to disk</desc><source>src/output_writer.cpp:1-96</source>"]
     Input --> Processor
     Processor <-->|Network call| Service
     Processor --- Config
     Processor --> Output
+</graph>
 
 Follow the strict syntax; use actual modules and data flow from the codebase.
 
 Process the codebase into nodegraph with these rulles:
+- If a codebase is not entirely about that, try to exclude behavior that all codebases have like error checking, tests, documenting itself and focus on the main puorpose of the codebase
+- Give the whole codebase a name and a description, name could be taken from the codebase if defined, if not, come up with a reasonable name like "Data parser CLI"
 - Use `<name>...</name>`, `<desc>...</desc>`, or both in a node label. For example, a familiar concept can use only a name, while a single operation can use only a description:
-  graph LR
-      MainLoop["<name>Main loop</name>"] --> WriteOutput["<desc>Writes output to file</desc>"]
+  <graph type="LR" name="Simple output flow" desc="Shows a main loop sending output to a file">
+      MainLoop["<name>Main loop</name><source>src/main.cpp:20-74</source>"] --> WriteOutput["<desc>Writes output to file</desc><source>src/output.cpp:10-42</source>"]
+  </graph>
 - connections can have labels if they represents something other than simple code flow, like: <-->|DB request| or <-->|Hashmap lookup|. Or if they can clarify relation of nodes by specifying passed data passed, like -->|Calculated offset|
 - nodes should represent execution code, not data structures
 - ideal range of nodes is 10 to 30, lower if codebase is really small. Try to merge nodes that could be described as one node
 - nodes should be connected, with code execution order in mind. If codebase is one program, all nodes are connected in one graph with one entry point
 - Major code loops can create loops in the graph. For example, a desktop application's frame loop can be represented as:
-  graph LR
-      PollEvents["<name>Poll events</name><desc>Handle pending input and window events</desc>"]
-      UpdateState["<name>Update state</name><desc>Advance application state</desc>"]
-      RenderFrame["<name>Render frame</name><desc>Draw the current state</desc>"]
-      PresentFrame["<name>Present frame</name><desc>Display the rendered frame</desc>"]
+  <graph type="LR" name="Application frame loop" desc="Shows event handling and frame rendering in execution order">
+      PollEvents["<name>Poll events</name><desc>Handle pending input and window events</desc><source>src/window.cpp:30-78</source>"]
+      UpdateState["<name>Update state</name><desc>Advance application state</desc><source>src/state.cpp:18-66</source>"]
+      RenderFrame["<name>Render frame</name><desc>Draw the current state</desc><source>src/renderer.cpp:10-88</source>"]
+      PresentFrame["<name>Present frame</name><desc>Display the rendered frame</desc><source>src/window.cpp:120-139</source>"]
       PollEvents --> UpdateState --> RenderFrame --> PresentFrame --> PollEvents
+  </graph>
   Use this pattern only when the code actually implements such a loop; represent the real operations in their execution order.
 - modes that calls multiple other modules/operations in a sequence can create branches in a graph
 - unused or unconnected parts of the code can be omitted or has to explicitly marked as unused in the label of the connection or the name of the node
 - network or external calls can create graph leaves that are not connected to anything else, with bidirectional connection
 - Use dotted line connections (`-.->`) for optional paths. For a call guarded by a condition, label the condition:
-  graph LR
-      CheckCache["<name>Check cache</name><desc>Test whether cached data is available</desc>"]
-      FetchData["<name>Fetch data</name><desc>Call the service when the cache misses</desc>"]
+  <graph type="LR" name="Optional cache fetch" desc="Fetches data only when the cache misses">
+      CheckCache["<name>Check cache</name><desc>Test whether cached data is available</desc><source>src/cache.cpp:42-80</source>"]
+      FetchData["<name>Fetch data</name><desc>Call the service when the cache misses</desc><source>src/client.cpp:25-69</source>"]
       CheckCache -.->|if cache miss| FetchData
+  </graph>
 - For an operation guarded by an existence check, connect the check to the operation only when the item exists:
-  graph LR
-      CheckConfig["<name>Check configuration</name><desc>Test whether the configuration file exists</desc>"]
-      LoadConfig["<name>Load configuration</name><desc>Read the configuration file</desc>"]
+  <graph type="LR" name="Optional config load" desc="Loads configuration only when the file exists">
+      CheckConfig["<name>Check configuration</name><desc>Test whether the configuration file exists</desc><source>src/config.cpp:11-24,config/app.toml:full</source>"]
+      LoadConfig["<name>Load configuration</name><desc>Read the configuration file</desc><source>src/config.cpp:25-43,config/app.toml:full</source>"]
       CheckConfig -.->|if file exists| LoadConfig
+  </graph>
+- Most important thing that you should focus on while thinking, is that this graph should teach the reader about how repository works. Specifically connections, if there are loops, conditinons, calls, recursion or iteration that happens on a large scale - between nodes, that should be represented with node connections, that shows those iterations and explain them with labels and descriptions

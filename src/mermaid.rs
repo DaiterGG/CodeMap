@@ -17,11 +17,21 @@ pub fn to_source(graph: &Graph) -> String {
         GraphDirection::LeftRight => "LR",
     };
     let mut source = format!("graph {direction}\n");
+    if let Some(name) = &graph.name {
+        source.push_str("accTitle: ");
+        source.push_str(&escape_accessibility_text(name));
+        source.push('\n');
+    }
+    if let Some(description) = &graph.description {
+        source.push_str("accDescr: ");
+        source.push_str(&escape_accessibility_text(description));
+        source.push('\n');
+    }
 
     for node in &graph.nodes {
         let mut label = Vec::new();
         if let Some(name) = &node.name {
-            label.push(escape_label(name));
+            label.push(format!("**{}**", escape_label(name)));
         }
         if let Some(description) = &node.description {
             label.push(escape_label(description));
@@ -44,6 +54,22 @@ pub fn to_source(graph: &Graph) -> String {
     }
 
     source
+}
+
+fn escape_accessibility_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn connector(edge: &GraphEdge) -> &'static str {
@@ -86,7 +112,7 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("hello-cli-mermaid-{unique}"));
         fs::create_dir_all(&directory).unwrap();
         let graph = crate::graph_parser::parse(
-            "graph LR\nInput[\"<name>Input</name><desc>Read & transform</desc>\"]\nOutput[\"<name>Output</name>\"]\nInput -.->|optional| Output",
+            "<graph type=\"LR\" name=\"Processor\" desc=\"Read & transform\">\nInput[\"<name>Input</name><desc>Read & transform</desc>\"]\nOutput[\"<name>Output</name>\"]\nInput -.->|optional| Output\n</graph>",
         )
         .unwrap();
 
@@ -95,7 +121,9 @@ mod tests {
         assert_eq!(path.file_name().unwrap(), "graph.mmd");
         let source = fs::read_to_string(path).unwrap();
         assert!(source.starts_with("graph LR\n"));
-        assert!(source.contains("Input[\"Input<br/>Read #amp; transform\"]"));
+        assert!(source.contains("accTitle: Processor"));
+        assert!(source.contains("accDescr: Read & transform"));
+        assert!(source.contains("Input[\"**Input**<br/>Read #amp; transform\"]"));
         assert!(source.contains("Input -.->|optional| Output"));
         assert!(!directory.join("mermaid.html").exists());
 

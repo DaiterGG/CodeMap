@@ -15,7 +15,11 @@ mod tests {
 
     #[test]
     fn nodegraph_prompt_is_embedded_from_prompt_file() {
-        assert!(nodegraph().contains("Start with `graph TD` or `graph LR`"));
+        assert!(
+            nodegraph()
+                .contains("Wrap the graph in `<graph type=\"TD|LR\" name=\"...\" desc=\"...\">`")
+        );
+        assert!(nodegraph().contains("</graph>"));
         assert!(nodegraph().contains("UpperCamelCase"));
         assert!(nodegraph().contains("no Markdown fences, preamble, or explanation"));
         assert!(nodegraph().contains("<name>Input</name><desc>Parse input</desc>"));

@@ -8,10 +8,12 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
-use crate::step::Message;
+use crate::step::{ChatClient, Message};
 
 const OPENROUTER_CHAT_COMPLETIONS_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct OpenRouter {
     client: Client,
@@ -29,23 +31,20 @@ impl OpenRouter {
     }
 
     pub fn from_env(model: impl Into<String>) -> Result<Self, OpenRouterConfigError> {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let root_env_path = manifest_dir.join(".env");
-        let parent_env_path = manifest_dir.parent().map(|parent| parent.join(".env"));
-        let env_path = if root_env_path.is_file() {
-            Some(root_env_path)
-        } else {
-            parent_env_path.filter(|path| path.is_file())
-        };
-
-        if let Some(path) = env_path {
-            dotenvy::from_path(&path).map_err(OpenRouterConfigError::Dotenv)?;
-        }
-
-        let api_key = env::var("OPEN_ROUTER_KEY")
-            .or_else(|_| env::var("OPEN_ROUTER"))
-            .map_err(|_| OpenRouterConfigError::MissingApiKey)?;
+        let api_key = api_key_from_env()?;
         Ok(Self::new(api_key, model))
+    }
+
+    pub fn is_configured() -> Result<bool, OpenRouterConfigError> {
+        Ok(Self::configured_api_key()?.is_some())
+    }
+
+    pub fn configured_api_key() -> Result<Option<String>, OpenRouterConfigError> {
+        load_env_file()?;
+        Ok(env::var("OPEN_ROUTER_KEY")
+            .or_else(|_| env::var("OPEN_ROUTER"))
+            .ok()
+            .filter(|key| !key.trim().is_empty()))
     }
 
     pub fn complete(&self, messages: &[Message]) -> Result<Message, OpenRouterError> {
@@ -57,6 +56,7 @@ impl OpenRouter {
         let response = self
             .client
             .post(OPENROUTER_CHAT_COMPLETIONS_URL)
+            .timeout(REQUEST_TIMEOUT)
             .bearer_auth(&self.api_key)
             .json(&request)
             .send()
@@ -64,11 +64,11 @@ impl OpenRouter {
 
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().map_err(OpenRouterError::Request)?;
+            let body = read_response_body(response).map_err(OpenRouterError::Request)?;
             return Err(OpenRouterError::ApiStatus { status, body });
         }
 
-        let body = response.text().map_err(OpenRouterError::Request)?;
+        let body = read_response_body(response).map_err(OpenRouterError::Request)?;
         let response: ChatCompletionResponse =
             serde_json::from_str(&body).map_err(|error| OpenRouterError::Decode { error, body })?;
         let choice = response
@@ -87,6 +87,46 @@ impl OpenRouter {
             reasoning: choice.message.reasoning,
         })
     }
+}
+
+impl ChatClient for OpenRouter {
+    fn complete(&self, messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>> {
+        OpenRouter::complete(self, messages)
+            .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
+    }
+}
+
+fn api_key_from_env() -> Result<String, OpenRouterConfigError> {
+    load_env_file()?;
+    env::var("OPEN_ROUTER_KEY")
+        .or_else(|_| env::var("OPEN_ROUTER"))
+        .map_err(|_| OpenRouterConfigError::MissingApiKey)
+}
+
+fn load_env_file() -> Result<(), OpenRouterConfigError> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_env_path = manifest_dir.join(".env");
+    let parent_env_path = manifest_dir.parent().map(|parent| parent.join(".env"));
+    let env_path = if root_env_path.is_file() {
+        Some(root_env_path)
+    } else {
+        parent_env_path.filter(|path| path.is_file())
+    };
+
+    if let Some(path) = env_path {
+        dotenvy::from_path(&path).map_err(OpenRouterConfigError::Dotenv)?;
+    }
+    Ok(())
+}
+
+fn read_response_body(response: reqwest::blocking::Response) -> Result<String, reqwest::Error> {
+    let started = Instant::now();
+    let body = response.text();
+    eprintln!(
+        "OpenRouter response body fetch took {:.2?}",
+        started.elapsed()
+    );
+    body
 }
 
 #[derive(Debug)]
@@ -160,7 +200,7 @@ pub enum OpenRouterError {
 impl fmt::Display for OpenRouterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Request(error) => write!(f, "OpenRouter request failed: {error}"),
+            Self::Request(error) => write!(f, "OpenRouter request failed: {error:?}"),
             Self::ApiStatus { status, body } => {
                 write!(f, "OpenRouter returned {status}: {body}")
             }

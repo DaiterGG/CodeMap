@@ -1,9 +1,9 @@
-//! Renders validated graphs as positioned, styled SVG-based HTML and writes
-//! custom graph exports and response history. Mermaid source export lives in
-//! the dedicated `mermaid` module.
+//! Lays out validated graphs, exports their positioned JSON, and writes the
+//! browser page and response history. Mermaid source export lives separately.
 
-use crate::graph_parser::{Graph, GraphDirection, GraphEdge, GraphNode};
+use crate::graph_parser::{Graph, GraphDirection};
 use crate::step::{Role, Step};
+use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io;
@@ -12,7 +12,10 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const TEMPLATE: &str = include_str!("../public/index.html");
-const SVG_MARKER: &str = "{{SVG}}";
+const GRAPH_JSON_MARKER: &str = "{{GRAPH_JSON}}";
+const ROUTER_WASM_MARKER: &str = "{{ROUTER_WASM_BASE64}}";
+const GRAPH_DETAILS_MARKER: &str = "{{GRAPH_DETAILS}}";
+const SERVER_MODE_MARKER: &str = "{{SERVER_MODE}}";
 const NODE_WIDTH: f64 = 210.0;
 const NODE_HEIGHT: f64 = 112.0;
 const HORIZONTAL_GAP: f64 = 90.0;
@@ -28,7 +31,9 @@ pub fn write_response_page(thought: Option<&str>, response: &str) -> io::Result<
 }
 
 pub fn write_graph_page(graph: &Graph, graph_source: &str) -> io::Result<PathBuf> {
-    let html = TEMPLATE.replace(SVG_MARKER, &render_svg(graph));
+    let graph_json = serialize_positioned_graph(graph)?;
+    let wasm_base64 = router_wasm_base64();
+    let html = render_page_html(graph, &graph_json, &wasm_base64, false);
     let generated_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("generated");
@@ -36,27 +41,61 @@ pub fn write_graph_page(graph: &Graph, graph_source: &str) -> io::Result<PathBuf
     let output_dir = create_timestamped_dir(&generated_dir)?;
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
+    fs::write(output_dir.join("graph.json"), &graph_json)?;
     crate::mermaid::write_graph_file(&output_dir, graph)?;
     crate::graph_file::write_graph_file(&output_dir, graph_source)?;
     Ok(output_path)
 }
 
 pub fn write_response_history_page(history: &[Step]) -> io::Result<PathBuf> {
+    let output_dir = create_response_history_dir()?;
+    finalize_response_history_page(&output_dir, history, &[])
+}
+
+pub fn create_response_history_dir() -> io::Result<PathBuf> {
+    let output_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("generated");
+    fs::create_dir_all(&output_dir)?;
+    create_timestamped_dir(&output_dir)
+}
+
+pub fn write_response_history_snapshot(
+    output_dir: &Path,
+    history: &[Step],
+    validation_errors: &[Option<String>],
+) -> io::Result<()> {
+    fs::write(
+        output_dir.join("response.txt"),
+        format_history(history, validation_errors),
+    )
+}
+
+pub fn finalize_response_history_page(
+    output_dir: &Path,
+    history: &[Step],
+    validation_errors: &[Option<String>],
+) -> io::Result<PathBuf> {
     let Some(final_step) = history.last() else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "cannot write response history without an LLM response",
         ));
     };
-    let output_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("generated");
-    write_response_files(
-        &output_dir,
-        final_step.response.reasoning.as_deref(),
-        &final_step.response.content,
-        Some(history),
-    )
+    let graph = crate::graph_file::parse_graph(&final_step.response.content)?;
+    let graph_json = serialize_positioned_graph(&graph)?;
+    let wasm_base64 = router_wasm_base64();
+    let html = render_page_html(&graph, &graph_json, &wasm_base64, false);
+    let output_path = output_dir.join("response.html");
+    fs::write(&output_path, html)?;
+    fs::write(output_dir.join("graph.json"), &graph_json)?;
+    crate::mermaid::write_graph_file(output_dir, &graph)?;
+    crate::graph_file::write_graph_file(
+        output_dir,
+        crate::graph_file::normalize_graph_source(&final_step.response.content),
+    )?;
+    write_response_history_snapshot(output_dir, history, validation_errors)?;
+    Ok(output_path)
 }
 
 fn write_response_files(
@@ -66,25 +105,182 @@ fn write_response_files(
     history: Option<&[Step]>,
 ) -> io::Result<PathBuf> {
     let graph = crate::graph_file::parse_graph(response)?;
-    let svg = render_svg(&graph);
-    let html = TEMPLATE.replace(SVG_MARKER, &svg);
+    let graph_json = serialize_positioned_graph(&graph)?;
+    let wasm_base64 = router_wasm_base64();
+    let html = render_page_html(&graph, &graph_json, &wasm_base64, false);
     let raw_graph = crate::graph_file::normalize_graph_source(response);
 
     fs::create_dir_all(generated_dir)?;
     let output_dir = create_timestamped_dir(generated_dir)?;
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
+    fs::write(output_dir.join("graph.json"), &graph_json)?;
     crate::mermaid::write_graph_file(&output_dir, &graph)?;
     crate::graph_file::write_graph_file(&output_dir, raw_graph)?;
     let text = history.map_or_else(
-        || format_attempt(1, None, thought, response),
-        format_history,
+        || format_attempt(1, None, thought, response, None),
+        |history| format_history(history, &[]),
     );
     fs::write(output_dir.join("response.txt"), text)?;
     Ok(output_path)
 }
 
-fn format_history(history: &[Step]) -> String {
+#[derive(Serialize)]
+struct PositionedGraph {
+    direction: &'static str,
+    name: Option<String>,
+    description: Option<String>,
+    width: f64,
+    height: f64,
+    nodes: Vec<PositionedNode>,
+    edges: Vec<PositionedEdge>,
+}
+
+#[derive(Serialize)]
+struct PositionedNode {
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Serialize)]
+struct PositionedEdge {
+    from: String,
+    to: String,
+    label: String,
+    dotted: bool,
+    arrow_start: bool,
+    arrow_end: bool,
+}
+
+pub(crate) fn serialize_positioned_graph(graph: &Graph) -> io::Result<String> {
+    let (positions, width, height) = layout_graph(graph);
+    let document = PositionedGraph {
+        direction: match graph.direction {
+            GraphDirection::TopDown => "TD",
+            GraphDirection::LeftRight => "LR",
+        },
+        name: graph.name.clone(),
+        description: graph.description.clone(),
+        width,
+        height,
+        nodes: graph
+            .nodes
+            .iter()
+            .map(|node| {
+                let &(x, y) = positions.get(node.id.as_str()).ok_or_else(|| {
+                    io::Error::other(format!("layout did not place graph node '{}'", node.id))
+                })?;
+                Ok(PositionedNode {
+                    id: node.id.clone(),
+                    name: node.name.clone(),
+                    description: node.description.clone(),
+                    x,
+                    y,
+                    width: NODE_WIDTH,
+                    height: NODE_HEIGHT,
+                })
+            })
+            .collect::<io::Result<Vec<_>>>()?,
+        edges: graph
+            .edges
+            .iter()
+            .map(|edge| PositionedEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                label: edge.label.clone(),
+                dotted: edge.dotted,
+                arrow_start: edge.arrow_start,
+                arrow_end: edge.arrow_end,
+            })
+            .collect(),
+    };
+    let json = serde_json::to_string(&document).map_err(io::Error::other)?;
+    Ok(json.replace('<', "\\u003c"))
+}
+
+fn render_page_html(
+    graph: &Graph,
+    graph_json: &str,
+    wasm_base64: &str,
+    server_mode: bool,
+) -> String {
+    let title = graph
+        .name
+        .as_deref()
+        .filter(|title| !title.is_empty())
+        .map(|title| format!("<h1>{}</h1>", escape_html(title)))
+        .unwrap_or_default();
+    let description = graph
+        .description
+        .as_deref()
+        .filter(|description| !description.is_empty())
+        .map(|description| {
+            format!(
+                "<p class=\"graph-description\">{}</p>",
+                escape_html(description)
+            )
+        })
+        .unwrap_or_default();
+    TEMPLATE
+        .replace(GRAPH_DETAILS_MARKER, &format!("{title}{description}"))
+        .replace(GRAPH_JSON_MARKER, graph_json)
+        .replace(ROUTER_WASM_MARKER, wasm_base64)
+        .replace(
+            SERVER_MODE_MARKER,
+            if server_mode { "true" } else { "false" },
+        )
+}
+
+pub(crate) fn render_web_index(server_mode: bool) -> String {
+    let graph = Graph {
+        direction: GraphDirection::TopDown,
+        name: None,
+        description: None,
+        nodes: Vec::new(),
+        edges: Vec::new(),
+    };
+    let graph_json =
+        serialize_positioned_graph(&graph).expect("an empty graph can always be serialized");
+    let wasm_base64 = router_wasm_base64();
+    render_page_html(&graph, &graph_json, &wasm_base64, server_mode)
+}
+
+fn router_wasm_base64() -> String {
+    encode_base64(include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/codemap_router.wasm"
+    )))
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = *chunk.get(1).unwrap_or(&0);
+        let third = *chunk.get(2).unwrap_or(&0);
+        encoded.push(ALPHABET[(first >> 2) as usize] as char);
+        encoded.push(ALPHABET[(((first & 0b11) << 4) | (second >> 4)) as usize] as char);
+        encoded.push(if chunk.len() > 1 {
+            ALPHABET[(((second & 0b1111) << 2) | (third >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        encoded.push(if chunk.len() > 2 {
+            ALPHABET[(third & 0b111111) as usize] as char
+        } else {
+            '='
+        });
+    }
+    encoded
+}
+
+fn format_history(history: &[Step], validation_errors: &[Option<String>]) -> String {
     history
         .iter()
         .enumerate()
@@ -104,6 +300,7 @@ fn format_history(history: &[Step]) -> String {
                     .filter(|prompt| !prompt.is_empty()),
                 step.response.reasoning.as_deref(),
                 &step.response.content,
+                validation_errors.get(index).and_then(Option::as_deref),
             )
         })
         .collect()
@@ -114,6 +311,7 @@ fn format_attempt(
     correction_prompt: Option<&str>,
     thought: Option<&str>,
     response: &str,
+    validation_error: Option<&str>,
 ) -> String {
     let mut text = format!("<attempt number=\"{attempt}\">\n");
     if let Some(prompt) = correction_prompt {
@@ -128,7 +326,13 @@ fn format_attempt(
     }
     text.push_str("<output>\n");
     text.push_str(&escape_html(response));
-    text.push_str("\n</output>\n</attempt>\n");
+    text.push_str("\n</output>\n");
+    if let Some(error) = validation_error {
+        text.push_str("<validation-error>\n");
+        text.push_str(&escape_html(error));
+        text.push_str("\n</validation-error>\n");
+    }
+    text.push_str("</attempt>\n");
     text
 }
 
@@ -145,30 +349,6 @@ fn create_timestamped_dir(generated_dir: &Path) -> io::Result<PathBuf> {
             Err(error) => return Err(error),
         }
     }
-}
-
-fn render_svg(graph: &Graph) -> String {
-    let (positions, width, height) = layout_graph(graph);
-
-    let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"Codebase graph\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><defs><marker id=\"arrow\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto-start-reverse\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#57606a\"/></marker></defs>"
-    );
-
-    for edge in &graph.edges {
-        if let (Some(&(from_x, from_y)), Some(&(to_x, to_y))) = (
-            positions.get(edge.from.as_str()),
-            positions.get(edge.to.as_str()),
-        ) {
-            render_edge(&mut svg, edge, from_x, from_y, to_x, to_y);
-        }
-    }
-    for node in &graph.nodes {
-        if let Some(&(x, y)) = positions.get(node.id.as_str()) {
-            render_node(&mut svg, node, x, y);
-        }
-    }
-    svg.push_str("</svg>");
-    svg
 }
 
 fn layout_graph(graph: &Graph) -> (HashMap<String, (f64, f64)>, f64, f64) {
@@ -297,137 +477,6 @@ fn layout_graph(graph: &Graph) -> (HashMap<String, (f64, f64)>, f64, f64) {
     (positions, width.max(320.0), height.max(200.0))
 }
 
-fn render_edge(svg: &mut String, edge: &GraphEdge, from_x: f64, from_y: f64, to_x: f64, to_y: f64) {
-    let from_center_x = from_x + NODE_WIDTH / 2.0;
-    let from_center_y = from_y + NODE_HEIGHT / 2.0;
-    let to_center_x = to_x + NODE_WIDTH / 2.0;
-    let to_center_y = to_y + NODE_HEIGHT / 2.0;
-    let (start_x, start_y, end_x, end_y) =
-        if (to_center_x - from_center_x).abs() > (to_center_y - from_center_y).abs() {
-            let from_side = if to_center_x >= from_center_x {
-                from_x + NODE_WIDTH
-            } else {
-                from_x
-            };
-            let to_side = if to_center_x >= from_center_x {
-                to_x
-            } else {
-                to_x + NODE_WIDTH
-            };
-            (from_side, from_center_y, to_side, to_center_y)
-        } else {
-            let from_side = if to_center_y >= from_center_y {
-                from_y + NODE_HEIGHT
-            } else {
-                from_y
-            };
-            let to_side = if to_center_y >= from_center_y {
-                to_y
-            } else {
-                to_y + NODE_HEIGHT
-            };
-            (from_center_x, from_side, to_center_x, to_side)
-        };
-    let dotted = if edge.dotted { " dotted" } else { "" };
-    let marker_start = if edge.arrow_start {
-        " marker-start=\"url(#arrow)\""
-    } else {
-        ""
-    };
-    let marker_end = if edge.arrow_end {
-        " marker-end=\"url(#arrow)\""
-    } else {
-        ""
-    };
-    svg.push_str(&format!(
-        "<line class=\"edge{dotted}\" x1=\"{start_x}\" y1=\"{start_y}\" x2=\"{end_x}\" y2=\"{end_y}\"{marker_start}{marker_end}/>"
-    ));
-    if !edge.label.is_empty() {
-        let label_x = (start_x + end_x) / 2.0;
-        let label_y = (start_y + end_y) / 2.0 - 5.0;
-        svg.push_str(&format!(
-            "<text class=\"edge-label\" x=\"{label_x}\" y=\"{label_y}\" text-anchor=\"middle\">{}</text>",
-            escape_html(&edge.label)
-        ));
-    }
-}
-
-fn render_node(svg: &mut String, node: &GraphNode, x: f64, y: f64) {
-    svg.push_str(&format!(
-        "<g class=\"node\"><rect x=\"{x}\" y=\"{y}\" width=\"{NODE_WIDTH}\" height=\"{NODE_HEIGHT}\"/>"
-    ));
-    let title = node.name.as_deref().unwrap_or_default();
-    let description = node.description.as_deref().unwrap_or_default();
-
-    if !title.is_empty() {
-        render_text_lines(
-            svg,
-            "node-title",
-            title,
-            x + NODE_WIDTH / 2.0,
-            y + 32.0,
-            18.0,
-        );
-    }
-    if !description.is_empty() {
-        let title_lines = wrapped_lines(title, 24, 2).len();
-        let start_y = if title.is_empty() {
-            y + 50.0
-        } else {
-            y + 42.0 + title_lines as f64 * 17.0
-        };
-        render_text_lines(
-            svg,
-            "node-description",
-            description,
-            x + NODE_WIDTH / 2.0,
-            start_y,
-            15.0,
-        );
-    }
-    svg.push_str("</g>");
-}
-
-fn render_text_lines(svg: &mut String, class: &str, text: &str, x: f64, y: f64, line_height: f64) {
-    for (index, line) in wrapped_lines(text, 24, 3).iter().enumerate() {
-        let line_y = y + index as f64 * line_height;
-        svg.push_str(&format!(
-            "<text class=\"{class}\" x=\"{x}\" y=\"{line_y}\" text-anchor=\"middle\">{}</text>",
-            escape_html(line)
-        ));
-    }
-}
-
-fn wrapped_lines(text: &str, max_chars: usize, max_lines: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in text.split_whitespace() {
-        if !current.is_empty() && current.chars().count() + 1 + word.chars().count() > max_chars {
-            lines.push(std::mem::take(&mut current));
-            if lines.len() == max_lines {
-                break;
-            }
-        }
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(word);
-    }
-    if !current.is_empty() && lines.len() < max_lines {
-        lines.push(current);
-    }
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    let rendered_chars = lines.iter().map(|line| line.chars().count()).sum::<usize>();
-    if lines.len() == max_lines && text.chars().count() > rendered_chars {
-        if let Some(last) = lines.last_mut() {
-            last.push_str("...");
-        }
-    }
-    lines
-}
-
 pub fn open_in_browser(path: impl AsRef<Path>) -> io::Result<()> {
     let path = fs::canonicalize(path)?;
     #[cfg(target_os = "windows")]
@@ -468,12 +517,13 @@ mod tests {
     use super::*;
     use crate::graph_parser::parse;
 
-    const GRAPH: &str = r#"graph LR
+    const GRAPH: &str = r#"<graph type="LR" name="Test graph" desc="Shows an input, transformation, and output">
 Input["<name>Input</name><desc>Read source</desc>"]
 Process["<name>Process</name><desc>Transform source</desc>"]
 Output["<desc>Write output</desc>"]
 Input --> Process
 Process -.->|optional| Output
+</graph>
 "#;
 
     #[test]
@@ -485,61 +535,76 @@ Process -.->|optional| Output
     }
 
     #[test]
-    fn renders_svg_boxes_and_connections_from_parsed_graph() {
-        let svg = render_svg(&parse(GRAPH).unwrap());
-        assert!(svg.starts_with("<svg"));
-        assert_eq!(svg.matches("<g class=\"node\">").count(), 3);
-        assert_eq!(svg.matches("<line class=\"edge").count(), 2);
-        assert!(svg.contains("class=\"edge dotted\""));
-        assert!(svg.contains("Input"));
-        assert!(svg.contains("Read source"));
-        assert!(svg.contains(">optional</text>"));
+    fn encodes_router_wasm_as_base64() {
+        assert_eq!(encode_base64(b"f"), "Zg==");
+        assert_eq!(encode_base64(b"fo"), "Zm8=");
+        assert_eq!(encode_base64(b"foo"), "Zm9v");
     }
 
     #[test]
-    fn renders_start_and_end_arrowheads_and_dotted_lines() {
-        let cases = [
-            (false, true, false, "marker-end=\"url(#arrow)\""),
-            (true, false, false, "marker-start=\"url(#arrow)\""),
-            (true, true, false, "marker-start=\"url(#arrow)\""),
-            (false, false, true, "class=\"edge dotted\""),
-            (false, false, false, "class=\"edge\""),
-        ];
+    fn web_index_leaves_graph_metadata_empty_for_javascript() {
+        let html = render_web_index(false);
+        assert!(html.contains("<div class=\"graph-details\" id=\"graph-details\"></div>"));
+        assert!(!html.contains("<h1>CodeMap</h1>"));
+        assert!(!html.contains("{{GRAPH_DETAILS}}"));
+        assert!(html.contains("data-server-mode=\"false\""));
+    }
 
-        for (arrow_start, arrow_end, dotted, expected) in cases {
-            let edge = GraphEdge {
-                from: "A".to_owned(),
-                to: "B".to_owned(),
-                label: String::new(),
-                dotted,
-                arrow_start,
-                arrow_end,
-            };
-            let mut svg = String::new();
-            render_edge(&mut svg, &edge, 0.0, 0.0, 300.0, 0.0);
-            assert!(svg.contains(expected), "{svg}");
-            assert_eq!(
-                svg.contains("marker-end=\"url(#arrow)\""),
-                arrow_end,
-                "{svg}"
-            );
-            assert_eq!(
-                svg.contains("marker-start=\"url(#arrow)\""),
-                arrow_start,
-                "{svg}"
-            );
-        }
+    #[test]
+    fn server_web_index_is_marked_for_the_browser() {
+        let html = render_web_index(true);
+        assert!(html.contains("data-server-mode=\"true\""));
+        assert!(!html.contains("{{SERVER_MODE}}"));
+    }
+
+    #[test]
+    fn escapes_graph_metadata_in_response_page() {
+        let graph = parse(
+            r#"<graph type="TD" name="A & <B>" desc="Checks <unsafe> & output">
+Input["<name>Input</name>"]
+</graph>"#,
+        )
+        .unwrap();
+
+        let graph_json = serialize_positioned_graph(&graph).unwrap();
+        let html = render_page_html(&graph, &graph_json, "AA==", false);
+        assert!(html.contains("<title>A &amp; &lt;B&gt;</title>"));
+        assert!(
+            html.contains("<p class=\"graph-description\">Checks &lt;unsafe&gt; &amp; output</p>")
+        );
+        assert!(graph_json.contains(r#"A & \u003cB>"#));
+        assert!(!graph_json.contains("</script>"));
+    }
+
+    #[test]
+    fn exports_node_positions_and_connection_data_as_json() {
+        let graph = parse(GRAPH).unwrap();
+        let json = serialize_positioned_graph(&graph).unwrap();
+        let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(document["direction"], "LR");
+        assert_eq!(document["name"], "Test graph");
+        assert_eq!(document["nodes"].as_array().unwrap().len(), 3);
+        assert_eq!(document["nodes"][0]["id"], "Input");
+        assert_eq!(document["nodes"][0]["x"], MARGIN);
+        assert_eq!(document["nodes"][0]["y"], MARGIN);
+        assert_eq!(document["nodes"][0]["width"], NODE_WIDTH);
+        assert_eq!(document["edges"].as_array().unwrap().len(), 2);
+        assert_eq!(document["edges"][1]["label"], "optional");
+        assert_eq!(document["edges"][1]["dotted"], true);
+        assert_eq!(document["edges"][1]["arrow_end"], true);
     }
 
     #[test]
     fn lays_out_children_on_next_row_and_new_parents_on_previous_row() {
         let graph = parse(
-            r#"graph TD
+            r#"<graph type="TD" name="Layout test" desc="Checks parent and child placement">
 Root["<name>Root</name>"]
 Child["<name>Child</name>"]
 Parent["<name>Parent</name>"]
 Root --> Child
 Parent --> Root
+</graph>
 "#,
         )
         .unwrap();
@@ -557,12 +622,13 @@ Parent --> Root
     #[test]
     fn keeps_siblings_on_the_same_band_and_spaces_them_apart() {
         let graph = parse(
-            r#"graph LR
+            r#"<graph type="LR" name="Sibling layout" desc="Checks sibling placement">
 Root["<name>Root</name>"]
 First["<name>First</name>"]
 Second["<name>Second</name>"]
 Root --> First
 Root --> Second
+</graph>
 "#,
         )
         .unwrap();
@@ -577,12 +643,13 @@ Root --> Second
     #[test]
     fn keeps_two_way_neighbors_on_the_same_band_next_to_each_other() {
         let graph = parse(
-            r#"graph LR
+            r#"<graph type="LR" name="Neighbor layout" desc="Checks two-way neighbor placement">
 Root["<name>Root</name>"]
 Neighbor["<name>Neighbor</name>"]
 Child["<name>Child</name>"]
 Root <--> Neighbor
 Root --> Child
+</graph>
 "#,
         )
         .unwrap();
@@ -610,8 +677,22 @@ Root --> Child
         assert_eq!(html_path.file_name().unwrap(), "response.html");
         let custom_page = fs::read_to_string(&html_path).unwrap();
         assert!(custom_page.contains("<svg"));
-        assert!(custom_page.contains("class=\"node\""));
+        assert!(custom_page.contains("id=\"graph-data\""));
+        assert!(custom_page.contains("JSON.parse(document.getElementById"));
+        assert!(custom_page.contains("nodesById.get(edge.from)"));
+        assert!(!custom_page.contains("<g class=\"node\">"));
+        assert!(custom_page.contains("<title>Test graph</title>"));
+        assert!(custom_page.contains("<h1>Test graph</h1>"));
+        assert!(custom_page.contains(
+            "<p class=\"graph-description\">Shows an input, transformation, and output</p>"
+        ));
         assert!(!custom_page.contains("mermaid.initialize"));
+
+        let graph_json = fs::read_to_string(output_dir.join("graph.json")).unwrap();
+        let document: serde_json::Value = serde_json::from_str(&graph_json).unwrap();
+        assert_eq!(document["nodes"].as_array().unwrap().len(), 3);
+        assert_eq!(document["edges"].as_array().unwrap().len(), 2);
+        assert!(custom_page.contains(&graph_json));
 
         let mermaid_file = fs::read_to_string(output_dir.join("graph.mmd")).unwrap();
         assert!(mermaid_file.contains("graph LR"));
@@ -635,9 +716,37 @@ Root --> Child
 
         assert_eq!(path.file_name().unwrap(), "response.html");
         assert!(html.contains("<svg"));
-        assert!(html.contains("Input"));
+        assert!(html.contains("id=\"graph-data\""));
+        assert!(path.with_file_name("graph.json").exists());
         assert!(path.with_file_name("graph.mmd").exists());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn writes_positioned_json_for_final_response_history() {
+        use crate::step::{Message, StepId};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let output_dir = std::env::temp_dir().join(format!("hello-cli-final-json-{unique}"));
+        fs::create_dir_all(&output_dir).unwrap();
+        let history = vec![Step {
+            id: StepId(0),
+            input: vec![Message::user("generate a graph")],
+            response: Message::assistant(GRAPH),
+        }];
+
+        let html_path = finalize_response_history_page(&output_dir, &history, &[]).unwrap();
+        let graph_json = fs::read_to_string(output_dir.join("graph.json")).unwrap();
+        let document: serde_json::Value = serde_json::from_str(&graph_json).unwrap();
+        let html = fs::read_to_string(html_path).unwrap();
+
+        assert_eq!(document["nodes"].as_array().unwrap().len(), 3);
+        assert_eq!(document["edges"].as_array().unwrap().len(), 2);
+        assert!(html.contains(&graph_json));
+        fs::remove_dir_all(output_dir).unwrap();
     }
 
     #[test]
@@ -676,19 +785,56 @@ Root --> Child
             },
         ];
 
-        let text = format_history(&history);
+        let text = format_history(
+            &history,
+            &[
+                Some("Graph validation failed: missing node declaration.".to_owned()),
+                None,
+            ],
+        );
         let first_output = text.find("first graph attempt").unwrap();
+        let validation_error = text.find("<validation-error>").unwrap();
         let correction = text.find("<error-prompt>").unwrap();
         let retry_thought = text.find("Retry thought").unwrap();
         let retry_output = text.find(&escape_html(GRAPH)).unwrap();
 
         assert!(first_output < correction);
+        assert!(validation_error < correction);
         assert!(correction < retry_thought);
         assert!(retry_thought < retry_output);
         assert!(text.contains("Fix the issue on line 4"));
         assert_eq!(text.matches("<attempt number=").count(), 2);
         assert!(!text.contains("initial graph request"));
         assert!(!text.contains("source context"));
+    }
+
+    #[test]
+    fn response_history_snapshot_writes_unvalidated_output_and_errors() {
+        use crate::step::{Message, StepId};
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let output_dir = std::env::temp_dir().join(format!("hello-cli-history-{unique}"));
+        fs::create_dir_all(&output_dir).unwrap();
+        let history = vec![Step {
+            id: StepId(0),
+            input: vec![Message::user("generate a graph")],
+            response: Message::assistant("invalid first answer"),
+        }];
+
+        write_response_history_snapshot(
+            &output_dir,
+            &history,
+            &[Some("Syntax error on line 2.".to_owned())],
+        )
+        .unwrap();
+
+        let text = fs::read_to_string(output_dir.join("response.txt")).unwrap();
+        assert!(text.contains("invalid first answer"));
+        assert!(text.contains("Syntax error on line 2."));
+        fs::remove_dir_all(output_dir).unwrap();
     }
 
     #[test]

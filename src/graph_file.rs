@@ -47,7 +47,7 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    const GRAPH: &str = "graph LR\nInput[\"<name>Input</name>\"]\nOutput[\"<name>Output</name>\"]\nInput --> Output\n";
+    const GRAPH: &str = "<graph type=\"LR\" name=\"Graph file test\" desc=\"Reads and writes graphs\">\nInput[\"<name>Input</name>\"]\nOutput[\"<name>Output</name>\"]\nInput --> Output\n</graph>\n";
 
     #[test]
     fn reads_and_parses_custom_graph_file() {

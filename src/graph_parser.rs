@@ -44,6 +44,8 @@ pub struct GraphEdge {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Graph {
     pub direction: GraphDirection,
+    pub name: Option<String>,
+    pub description: Option<String>,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
@@ -96,7 +98,11 @@ pub fn validate(output: &str) -> Result<(), GraphDiagnostic> {
 pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
     let lines = output.lines().collect::<Vec<_>>();
     let mut header_seen = false;
+    let mut wrapper_seen = false;
+    let mut wrapper_closed = false;
     let mut direction = GraphDirection::TopDown;
+    let mut graph_name = None;
+    let mut graph_description = None;
     let mut declarations = HashSet::new();
     let mut nodes = Vec::new();
     let mut connections = HashSet::new();
@@ -110,32 +116,56 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
             continue;
         }
 
-        if line.starts_with("graph") || line.starts_with("flowchart") {
-            if !is_graph_header(line) {
+        if line.starts_with("<graph") {
+            if header_seen || wrapper_seen {
                 return Err(diagnostic(
                     DiagnosticKind::Syntax,
                     line_number,
                     raw_line,
-                    "The graph header is missing or has an unsupported direction.",
-                    "Use exactly `graph TD` or `graph LR` as the first graph statement.",
+                    "A graph wrapper appears after graph content or another graph header.",
+                    "Use exactly one `<graph type=\"TD|LR\" ...>` wrapper around the graph.",
                 ));
             }
-            if header_seen {
-                return Err(diagnostic(
-                    DiagnosticKind::Syntax,
-                    line_number,
-                    raw_line,
-                    "A second graph header appears in the same graph.",
-                    "Include exactly one graph header, before all node and connection statements.",
-                ));
-            }
+            let (parsed_direction, name, description) =
+                parse_graph_wrapper(line).map_err(|explanation| {
+                    diagnostic(
+                        DiagnosticKind::Syntax,
+                        line_number,
+                        raw_line,
+                        &explanation,
+                        "Open the graph with `<graph type=\"TD|LR\" name=\"...\" desc=\"...\">`; name and desc are optional.",
+                    )
+                })?;
             header_seen = true;
-            direction = if line == "graph LR" {
-                GraphDirection::LeftRight
-            } else {
-                GraphDirection::TopDown
-            };
+            wrapper_seen = true;
+            direction = parsed_direction;
+            graph_name = name;
+            graph_description = description;
             continue;
+        }
+
+        if line == "</graph>" {
+            if !wrapper_seen || wrapper_closed {
+                return Err(diagnostic(
+                    DiagnosticKind::Syntax,
+                    line_number,
+                    raw_line,
+                    "A graph closing tag has no matching open graph wrapper.",
+                    "Close the single graph wrapper with `</graph>`.",
+                ));
+            }
+            wrapper_closed = true;
+            continue;
+        }
+
+        if wrapper_closed {
+            return Err(diagnostic(
+                DiagnosticKind::Syntax,
+                line_number,
+                raw_line,
+                "Graph content appears after the closing graph tag.",
+                "Place all node declarations and connections inside `<graph>...</graph>`.",
+            ));
         }
 
         if !header_seen {
@@ -143,8 +173,8 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                 DiagnosticKind::Syntax,
                 line_number,
                 raw_line,
-                "A graph statement appears before the graph header.",
-                "Start with `graph TD` or `graph LR`.",
+                "A graph statement appears outside the required graph wrapper.",
+                "Wrap the graph in `<graph type=\"TD|LR\" name=\"...\" desc=\"...\">` and `</graph>`.",
             ));
         }
 
@@ -279,8 +309,18 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
             DiagnosticKind::Syntax,
             1,
             lines.first().copied().unwrap_or(""),
-            "The graph header is missing.",
-            "Start with `graph TD` or `graph LR`.",
+            "The graph wrapper is missing.",
+            "Wrap the graph in `<graph type=\"TD|LR\" name=\"...\" desc=\"...\">` and `</graph>`.",
+        ));
+    }
+
+    if wrapper_seen && !wrapper_closed {
+        return Err(diagnostic(
+            DiagnosticKind::Syntax,
+            lines.len(),
+            lines.last().copied().unwrap_or(""),
+            "The graph wrapper is missing its closing tag.",
+            "Close the graph with `</graph>`.",
         ));
     }
 
@@ -315,9 +355,78 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
 
     Ok(Graph {
         direction,
+        name: graph_name,
+        description: graph_description,
         nodes,
         edges: graph_edges,
     })
+}
+
+fn parse_graph_wrapper(
+    line: &str,
+) -> Result<(GraphDirection, Option<String>, Option<String>), String> {
+    let attributes = line
+        .strip_prefix("<graph")
+        .and_then(|line| line.strip_suffix('>'))
+        .ok_or_else(|| "The graph opening tag is malformed.".to_owned())?;
+    let mut attributes = attributes.trim();
+    let mut direction = None;
+    let mut name = None;
+    let mut description = None;
+
+    while !attributes.is_empty() {
+        let name_end = attributes
+            .find(|character: char| character == '=' || character.is_whitespace())
+            .unwrap_or(attributes.len());
+        if name_end == 0 {
+            return Err("The graph opening tag contains a malformed attribute.".to_owned());
+        }
+        let attribute_name = &attributes[..name_end];
+        attributes = attributes[name_end..].trim_start();
+        let Some(value) = attributes.strip_prefix('=') else {
+            return Err(format!(
+                "Graph attribute `{attribute_name}` is missing `=`."
+            ));
+        };
+        attributes = value.trim_start();
+        let Some(value) = attributes.strip_prefix('"') else {
+            return Err(format!(
+                "Graph attribute `{attribute_name}` must use a double-quoted value."
+            ));
+        };
+        let Some(value_end) = value.find('"') else {
+            return Err(format!(
+                "Graph attribute `{attribute_name}` has no closing quote."
+            ));
+        };
+        let remaining_attributes = value[value_end + 1..].trim_start();
+        let value = value[..value_end].to_owned();
+        attributes = remaining_attributes;
+
+        let target = match attribute_name {
+            "type" => &mut direction,
+            "name" => &mut name,
+            "desc" => &mut description,
+            _ => {
+                return Err(format!(
+                    "Graph attribute `{attribute_name}` is not supported."
+                ));
+            }
+        };
+        if target.replace(value).is_some() {
+            return Err(format!(
+                "Graph attribute `{attribute_name}` appears more than once."
+            ));
+        }
+    }
+
+    let direction = match direction.as_deref() {
+        Some("TD") => GraphDirection::TopDown,
+        Some("LR") => GraphDirection::LeftRight,
+        Some(_) => return Err("Graph type must be `TD` or `LR`.".to_owned()),
+        None => return Err("Graph opening tag requires a `type` attribute.".to_owned()),
+    };
+    Ok((direction, name, description))
 }
 
 fn diagnostic(
@@ -334,10 +443,6 @@ fn diagnostic(
         explanation: explanation.to_owned(),
         expected: expected.to_owned(),
     }
-}
-
-fn is_graph_header(line: &str) -> bool {
-    matches!(line, "graph TD" | "graph LR")
 }
 
 fn is_fence(line: &str) -> bool {
@@ -520,9 +625,28 @@ mod tests {
 Beta["<name>Beta</name><desc>Second node</desc>"]
 "#;
 
+    fn wrap_graph(direction: &str, body: &str) -> String {
+        format!(
+            "<graph type=\"{direction}\" name=\"Test graph\" desc=\"Parser test\">\n{body}\n</graph>"
+        )
+    }
+
+    #[test]
+    fn rejects_legacy_mermaid_headers() {
+        let error = validate("graph TD\nAlpha[\"<name>Alpha</name>\"]").unwrap_err();
+        assert!(
+            error
+                .explanation
+                .contains("outside the required graph wrapper")
+        );
+    }
+
     #[test]
     fn detects_duplicate_connections_when_nodes_are_declared_separately() {
-        let graph = format!("graph TD\nAlpha --> Beta\nAlpha --> Beta\n{NODE_DECLARATIONS}");
+        let graph = wrap_graph(
+            "TD",
+            &format!("Alpha --> Beta\nAlpha --> Beta\n{NODE_DECLARATIONS}"),
+        );
         let error = validate(&graph).unwrap_err();
         assert_eq!(error.kind, DiagnosticKind::RedundantConnection);
         assert_eq!(error.line_number, 3);
@@ -531,8 +655,11 @@ Beta["<name>Beta</name><desc>Second node</desc>"]
 
     #[test]
     fn keeps_distinct_direction_connector_and_label_relationships() {
-        let graph = format!(
-            "graph TD\n{NODE_DECLARATIONS}\nAlpha --> Beta\nBeta --> Alpha\nAlpha -.-> Beta\nAlpha -->|calls| Beta\n"
+        let graph = wrap_graph(
+            "TD",
+            &format!(
+                "{NODE_DECLARATIONS}\nAlpha --> Beta\nBeta --> Alpha\nAlpha -.-> Beta\nAlpha -->|calls| Beta\n"
+            ),
         );
         assert_eq!(validate(&graph), Ok(()));
     }
@@ -551,7 +678,10 @@ Beta["<name>Beta</name><desc>Second node</desc>"]
         ];
 
         for (operator, from, to, dotted, arrow_start, arrow_end) in cases {
-            let graph = format!("graph LR\n{NODE_DECLARATIONS}\nAlpha {operator} Beta\n");
+            let graph = wrap_graph(
+                "LR",
+                &format!("{NODE_DECLARATIONS}\nAlpha {operator} Beta\n"),
+            );
             let parsed = parse(&graph).unwrap();
             let edge = &parsed.edges[0];
             assert_eq!(edge.from, from, "connector {operator}");
@@ -564,7 +694,7 @@ Beta["<name>Beta</name><desc>Second node</desc>"]
 
     #[test]
     fn accepts_connections_before_separate_node_declarations() {
-        let graph = format!("graph LR\nAlpha --> Beta\n{NODE_DECLARATIONS}");
+        let graph = wrap_graph("LR", &format!("Alpha --> Beta\n{NODE_DECLARATIONS}"));
         assert_eq!(validate(&graph), Ok(()));
     }
 
@@ -572,8 +702,12 @@ Beta["<name>Beta</name><desc>Second node</desc>"]
     fn identifies_header_problems_with_a_line_and_expectation() {
         let error = validate("Alpha --> Beta").unwrap_err();
         assert_eq!(error.line_number, 1);
-        assert!(error.explanation.contains("before the graph header"));
-        assert!(error.expected.contains("graph TD"));
+        assert!(
+            error
+                .explanation
+                .contains("outside the required graph wrapper")
+        );
+        assert!(error.expected.contains("<graph type="));
         assert!(
             error
                 .correction_details()
@@ -584,8 +718,8 @@ Beta["<name>Beta</name><desc>Second node</desc>"]
     #[test]
     fn identifies_unclosed_node_labels_and_quotes() {
         for graph in [
-            "graph TD\nAlpha[\"<name>A</name><desc>Node</desc>\"",
-            "graph TD\nAlpha[\"<name>A</name><desc>Node</desc>]",
+            "<graph type=\"TD\">\nAlpha[\"<name>A</name><desc>Node</desc>\"",
+            "<graph type=\"TD\">\nAlpha[\"<name>A</name><desc>Node</desc>]",
         ] {
             let error = validate(graph).unwrap_err();
             assert_eq!(error.line_number, 2);
@@ -595,25 +729,55 @@ Beta["<name>Beta</name><desc>Second node</desc>"]
 
     #[test]
     fn identifies_missing_or_misordered_node_markers() {
-        let error = validate("graph TD\nAlpha[\"<desc>Node</desc><name>A</name>\"]").unwrap_err();
+        let error = validate("<graph type=\"TD\">\nAlpha[\"<desc>Node</desc><name>A</name>\"]")
+            .unwrap_err();
         assert!(error.explanation.contains("tag"));
         assert!(error.expected.contains("<name>"));
     }
 
     #[test]
     fn accepts_nodes_with_only_name_or_only_description() {
-        let graph = r#"graph LR
+        let graph = r#"<graph type="LR" name="Test graph" desc="Parser test">
 MainLoop["<name>Main loop</name>"]
 WriteOutput["<desc>Writes output to file</desc>"]
 MainLoop --> WriteOutput
+</graph>
 "#;
         assert_eq!(validate(graph), Ok(()));
     }
 
     #[test]
+    fn accepts_graph_wrapper_metadata_and_inline_node_declarations() {
+        let graph = r#"<graph type="LR" name="Custom data processor layer" desc="Checks data against groundtruth">
+Input["<name>Input</name><desc>Parse input</desc>"] --> Processor["<name>Processor</name><desc>Run calculations</desc>"]
+Processor --> Output["<name>Output</name>"]
+</graph>"#;
+
+        let parsed = parse(graph).unwrap();
+        assert_eq!(parsed.direction, GraphDirection::LeftRight);
+        assert_eq!(parsed.name.as_deref(), Some("Custom data processor layer"));
+        assert_eq!(
+            parsed.description.as_deref(),
+            Some("Checks data against groundtruth")
+        );
+        assert_eq!(parsed.nodes.len(), 3);
+        assert_eq!(parsed.edges.len(), 2);
+    }
+
+    #[test]
+    fn requires_graph_wrapper_to_be_closed() {
+        let error = validate(
+            r#"<graph type="TD">
+Input["<name>Input</name>"]"#,
+        )
+        .unwrap_err();
+        assert!(error.explanation.contains("missing its closing tag"));
+    }
+
+    #[test]
     fn identifies_invalid_node_ids_and_reserved_word() {
         for id in ["lowercase", "Bad_ID", "end"] {
-            let graph = format!("graph TD\n{id}[\"<name>N</name><desc>Node</desc>\"]");
+            let graph = wrap_graph("TD", &format!("{id}[\"<name>N</name><desc>Node</desc>\"]"));
             let error = validate(&graph).unwrap_err();
             assert!(error.explanation.contains("Node ID"));
             assert!(error.expected.contains("UpperCamelCase"));
@@ -623,8 +787,8 @@ MainLoop --> WriteOutput
     #[test]
     fn identifies_dangling_connectors() {
         for graph in [
-            format!("graph TD\n{NODE_DECLARATIONS}\nAlpha -->\n"),
-            format!("graph TD\n{NODE_DECLARATIONS}\n--> Beta\n"),
+            wrap_graph("TD", &format!("{NODE_DECLARATIONS}\nAlpha -->\n")),
+            wrap_graph("TD", &format!("{NODE_DECLARATIONS}\n--> Beta\n")),
         ] {
             let error = validate(&graph).unwrap_err();
             assert_eq!(error.kind, DiagnosticKind::Syntax);
@@ -637,7 +801,7 @@ MainLoop --> WriteOutput
 
     #[test]
     fn identifies_unrecognized_connection_syntax() {
-        let graph = format!("graph TD\n{NODE_DECLARATIONS}\nAlpha ==> Beta\n");
+        let graph = wrap_graph("TD", &format!("{NODE_DECLARATIONS}\nAlpha ==> Beta\n"));
         let error = validate(&graph).unwrap_err();
         assert_eq!(error.line_number, 5);
         assert!(error.explanation.contains("Two node IDs"));
@@ -646,7 +810,10 @@ MainLoop --> WriteOutput
 
     #[test]
     fn reports_connections_to_nodes_without_declarations() {
-        let graph = "graph TD\nAlpha --> Beta\nAlpha[\"<name>A</name><desc>Node</desc>\"]";
+        let graph = r#"<graph type="TD">
+Alpha --> Beta
+Alpha["<name>A</name><desc>Node</desc>"]
+</graph>"#;
         let error = validate(graph).unwrap_err();
         assert!(error.explanation.contains("Beta"));
         assert!(error.expected.contains("Declare every referenced node"));
@@ -654,7 +821,10 @@ MainLoop --> WriteOutput
 
     #[test]
     fn accepts_fenced_output() {
-        let graph = format!("```text\ngraph TD\n{NODE_DECLARATIONS}Alpha --> Beta\n```");
+        let graph = format!(
+            "```text\n{}\n```",
+            wrap_graph("TD", &format!("{NODE_DECLARATIONS}Alpha --> Beta\n"))
+        );
         assert_eq!(validate(&graph), Ok(()));
     }
 }

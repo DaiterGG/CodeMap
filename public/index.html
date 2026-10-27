@@ -1,41 +1,1302 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-pattern="crosses" data-server-mode="{{SERVER_MODE}}">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codebase graph</title>
+  <title>CodeMap</title>
   <style>
     :root {
+      color-scheme: dark;
+      font: 15px/1.5 Inter, sans-serif;
+      color: #fff;
+      background: #101010;
+      --page-bg: #101010;
+      --grid-line: rgba(255, 255, 255, 0.06);
+      --pattern-line: rgba(255, 255, 255, 0.16);
+      --node-bg: #1a1a1a;
+      --line-color: rgba(255, 255, 255, 0.7);
+      --connection-color: #b8b8b8;
+      --canvas-border: rgba(255, 255, 255, 0.25);
+      --text-color: #fff;
+      --muted-color: rgba(255, 255, 255, 0.65);
+      --button-bg: #101010;
+      --button-hover-bg: #1a1a1a;
+    }
+
+    :root[data-theme="light"] {
       color-scheme: light;
-      font: 15px/1.5 system-ui, sans-serif;
       color: #202833;
       background: #f4f6f8;
+      --page-bg: #f4f6f8;
+      --grid-line: rgba(32, 40, 51, 0.08);
+      --pattern-line: rgba(32, 40, 51, 0.18);
+      --node-bg: #fff;
+      --line-color: #57606a;
+      --connection-color: #626b75;
+      --canvas-border: #d0d7de;
+      --text-color: #202833;
+      --muted-color: #57606a;
+      --button-bg: #fff;
+      --button-hover-bg: #f4f6f8;
     }
-    body { margin: 0; }
-    main { padding: 24px; }
-    h1 { margin: 0 0 16px; font-size: 20px; }
+
+    body {
+      margin: 0;
+    }
+
+    main {
+      display: flex;
+      align-items: stretch;
+      gap: 24px;
+      height: 100vh;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .page-header {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 16px;
+      width: min(280px, 28vw);
+      min-width: 220px;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .page-identity {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-width: 0;
+      gap: 4px;
+    }
+
+    .graph-details {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .graph-details:has(h1:not(:empty), .graph-description:not(:empty)) {
+      display: flex;
+    }
+
+    .brand-name {
+      font-family: cursive;
+      font-size: 25px;
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .page-controls {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      width: 100%;
+      margin-top: auto;
+      gap: 8px;
+    }
+
+    .web-control {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #generate-button {
+      width: 100%;
+      border-color: var(--muted-color);
+    }
+
+    #upload-code-button {
+      box-sizing: border-box;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .model-picker {
+      position: relative;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    #model-select {
+      box-sizing: border-box;
+      overflow: hidden;
+      width: 100%;
+      min-width: 0;
+      text-align: left;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-menu {
+      position: absolute;
+      z-index: 2;
+      bottom: calc(100% + 6px);
+      left: 0;
+      width: min(420px, calc(100vw - 48px));
+      display: flex;
+      flex-direction: column-reverse;
+      box-sizing: border-box;
+      padding: 8px;
+      border: 1px solid var(--line-color);
+      border-radius: 12px;
+      background: var(--page-bg);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .model-menu[hidden] {
+      display: none;
+    }
+
+    .model-search {
+      box-sizing: border-box;
+      width: 100%;
+      margin-top: 6px;
+      cursor: text;
+    }
+
+    .model-options {
+      overflow-y: auto;
+      max-height: min(480px, calc(100vh - 120px));
+    }
+
+    .model-group-label {
+      padding: 6px 10px 3px;
+      color: var(--muted-color);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .model-option {
+      display: block;
+      width: 100%;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--text-color);
+      background: transparent;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .model-option:hover,
+    .model-option[aria-selected="true"] {
+      background: var(--button-hover-bg);
+    }
+
+    h1 {
+      display: block;
+      overflow: hidden;
+      margin: 0;
+      font-size: 20px;
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    h1:empty,
+    .graph-description:empty {
+      display: none;
+    }
+
+    .control-button {
+      padding: 8px 12px;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      color: var(--text-color);
+      background: var(--button-bg);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .control-button:hover {
+      background: var(--button-hover-bg);
+    }
+
+    .control-button:focus-visible {
+      outline: 2px solid var(--line-color);
+      outline-offset: 3px;
+    }
+
+    .graph-description {
+      display: block;
+      margin: 0;
+      color: var(--muted-color);
+    }
+
     .canvas {
+      box-sizing: border-box;
       overflow: auto;
-      min-height: 70vh;
-      border: 1px solid #d0d7de;
-      border-radius: 8px;
-      background-color: #fff;
-      background-image: radial-gradient(#d8dee4 1px, transparent 1px);
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+      height: 100%;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      background-color: var(--page-bg);
+    }
+
+    :root[data-pattern="grid"] .canvas {
+      background-image:
+        linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+      background-size: 300px 200px;
+    }
+
+    :root[data-pattern="dots"] .canvas {
+      background-image: radial-gradient(var(--pattern-line) 1px, transparent 1px);
       background-size: 20px 20px;
     }
-    svg { display: block; }
-    .edge { stroke: #57606a; stroke-width: 2; fill: none; }
-    .edge.dotted { stroke-dasharray: 5 5; }
-    .edge-label { fill: #57606a; font-size: 12px; }
-    .node rect { fill: #fff; stroke: #0969da; stroke-width: 2; rx: 8; }
-    .node-title { fill: #202833; font-size: 15px; font-weight: 650; }
-    .node-description { fill: #57606a; font-size: 12px; }
+
+    .canvas {
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .canvas.panning {
+      cursor: grabbing;
+      user-select: none;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .edge {
+      stroke: var(--connection-color);
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+    }
+
+    .edge.dotted {
+      stroke-dasharray: 5 5;
+    }
+
+    .edge-label {
+      fill: var(--muted-color);
+      font-size: 12px;
+    }
+
+    .node rect {
+      fill: var(--node-bg);
+      stroke: var(--line-color);
+      stroke-width: 2;
+    }
+
+    .node {
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .node.dragging {
+      cursor: grabbing;
+    }
+
+    .node-title {
+      fill: var(--text-color);
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .node-description {
+      fill: var(--muted-color);
+      font-size: 12px;
+    }
+
+    .upload-dialog {
+      width: min(480px, calc(100vw - 40px));
+      box-sizing: border-box;
+      padding: 0;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      color: var(--text-color);
+      background: var(--page-bg);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .upload-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    .upload-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 20px;
+    }
+
+    .upload-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .upload-heading h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .upload-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .upload-field input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 8px 12px;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      color: var(--text-color);
+      background: var(--button-bg);
+      font: inherit;
+    }
+
+    .upload-dropzone {
+      padding: 24px 16px;
+      border: 2px dashed var(--line-color);
+      border-radius: 12px;
+      color: var(--muted-color);
+      text-align: center;
+    }
+
+    .upload-dropzone.dragging {
+      border-style: solid;
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+    }
+
+    @media (max-width: 860px) {
+      main {
+        flex-direction: column;
+      }
+
+      .page-header {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .web-control {
+        flex-direction: row;
+      }
+    }
   </style>
 </head>
+
 <body>
   <main>
-    <h1>Codebase graph</h1>
-    <div class="canvas">{{SVG}}</div>
+    <div class="page-header">
+      <div class="page-identity">
+        <div class="brand-name">CodeMap</div>
+        <div class="graph-details" id="graph-details">{{GRAPH_DETAILS}}</div>
+      </div>
+      <div class="page-controls">
+        <div class="web-control">
+          <span>API: <span id="api-status" aria-live="polite">Loading...</span></span>
+          <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
+        </div>
+        <div class="model-controls">
+          <div class="model-picker" id="model-picker">
+            <button class="control-button" id="model-select" type="button" disabled
+              aria-haspopup="listbox" aria-expanded="false" aria-controls="model-options">Loading models...</button>
+            <div class="model-menu" id="model-menu" hidden>
+              <input class="control-button model-search" id="model-search" type="search"
+                placeholder="Search models..." autocomplete="off" aria-label="Search models">
+              <div class="model-options" id="model-options" role="listbox" aria-label="Models"></div>
+            </div>
+          </div>
+        </div>
+        <button class="control-button" id="upload-code-button" type="button">Upload code</button>
+        <button class="control-button" id="generate-button" type="button">Generate</button>
+      </div>
+    </div>
+    <div class="canvas"><svg id="graph-svg" role="img" aria-label="Codebase graph"></svg></div>
   </main>
+  <dialog class="upload-dialog" id="upload-dialog" aria-labelledby="upload-dialog-title">
+    <div class="upload-panel">
+      <div class="upload-heading">
+        <h2 id="upload-dialog-title">Upload code</h2>
+        <button class="control-button" id="upload-close-button" type="button" aria-label="Close upload window">Close</button>
+      </div>
+      <label class="upload-field" for="upload-source">
+        Folder path or repository URL
+        <input id="upload-source" type="text" placeholder="Select a folder or enter a URL" autocomplete="off">
+      </label>
+      <div class="upload-dropzone" id="upload-dropzone" tabindex="0">
+        Drop files or folders here
+      </div>
+      <button class="control-button" id="upload-browse-button" type="button">Choose folder</button>
+      <span id="upload-picker-status" aria-live="polite"></span>
+    </div>
+  </dialog>
+  <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
+  <script type="application/octet-stream" id="router-wasm">{{ROUTER_WASM_BASE64}}</script>
+  <script>
+    const apiStatus = document.getElementById("api-status");
+    const modelSelect = document.getElementById("model-select");
+    const modelSearch = document.getElementById("model-search");
+    const modelPicker = document.getElementById("model-picker");
+    const modelMenu = document.getElementById("model-menu");
+    const modelOptions = document.getElementById("model-options");
+    const authButton = document.getElementById("openrouter-sign-in-button");
+    const uploadCodeButton = document.getElementById("upload-code-button");
+    const uploadDialog = document.getElementById("upload-dialog");
+    const uploadSource = document.getElementById("upload-source");
+    const uploadDropzone = document.getElementById("upload-dropzone");
+    const uploadBrowseButton = document.getElementById("upload-browse-button");
+    const uploadCloseButton = document.getElementById("upload-close-button");
+    const uploadPickerStatus = document.getElementById("upload-picker-status");
+    const generateButton = document.getElementById("generate-button");
+    let lastRenderedGenerationId = null;
+    let activeGenerationId = null;
+    let generationStarting = false;
+    const generationFailureLabel = error =>
+      /429|rate.?limit/i.test(error) ? "Generation failed: ratelimited" : "Generation failed";
+    const recommendedModelIds = new Set([
+      "liquid/lfm-2.5-2.6b:free",
+      "inception/mercury-decide:free",
+      "xingchen-agi/xing4.0-29b-a4b:free"
+    ]);
+    let availableModels = [];
+    let selectedModelId = "";
+    uploadCodeButton.addEventListener("click", () => uploadDialog.showModal());
+    const updateUploadButton = () => {
+      const source = uploadSource.value.trim();
+      uploadCodeButton.textContent = source || "Upload code";
+      uploadCodeButton.title = source;
+    };
+    const showSourcePath = path => {
+      uploadSource.value = path || "";
+      updateUploadButton();
+      document.getElementById("upload-dialog-title").textContent =
+        path ? "Update code" : "Upload code";
+    };
+    uploadSource.addEventListener("input", updateUploadButton);
+    uploadBrowseButton.addEventListener("click", async () => {
+      uploadBrowseButton.disabled = true;
+      uploadBrowseButton.textContent = "Opening folder picker...";
+      uploadPickerStatus.textContent = "";
+      try {
+        const response = await fetch("/api/browse-folder", {
+          method: "POST",
+          cache: "no-store"
+        });
+        const body = await response.text();
+        let result;
+        try {
+          result = JSON.parse(body);
+        } catch {
+          result = body;
+        }
+        if (!response.ok) {
+          throw new Error(typeof result === "string" ? result : "The folder picker could not be opened.");
+        }
+        if (result.path) {
+          showSourcePath(result.path);
+          uploadDialog.close();
+        }
+      } catch (error) {
+        uploadPickerStatus.textContent = error instanceof TypeError
+          ? "Could not reach CodeMap. Make sure it is running in --web mode."
+          : error.message || "Could not open the folder picker.";
+      } finally {
+        uploadBrowseButton.disabled = false;
+        uploadBrowseButton.textContent = "Choose folder";
+      }
+    });
+    uploadCloseButton.addEventListener("click", () => uploadDialog.close());
+    uploadDropzone.addEventListener("dragover", event => {
+      event.preventDefault();
+      uploadDropzone.classList.add("dragging");
+    });
+    uploadDropzone.addEventListener("dragleave", () => {
+      uploadDropzone.classList.remove("dragging");
+    });
+    uploadDropzone.addEventListener("drop", event => {
+      event.preventDefault();
+      uploadDropzone.classList.remove("dragging");
+      const count = event.dataTransfer.files.length;
+      uploadPickerStatus.textContent = count
+        ? `${count} item${count === 1 ? "" : "s"} dropped.`
+        : "";
+    });
+    generateButton.addEventListener("click", async () => {
+      const source = uploadSource.value.trim();
+      if (!source) {
+        generateButton.textContent = "Choose a folder or URL";
+        return;
+      }
+      if (!selectedModelId) {
+        generateButton.textContent = "Select a model";
+        return;
+      }
+      generateButton.disabled = true;
+      generationStarting = true;
+      generateButton.textContent = "Starting...";
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          cache: "no-store",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({source, model: selectedModelId})
+        });
+        const body = await response.text();
+        let result;
+        try {
+          result = JSON.parse(body);
+        } catch {
+          result = body;
+        }
+        if (!response.ok) throw new Error(typeof result === "string" ? result : "Could not start generation.");
+        activeGenerationId = result.id;
+        generationStarting = false;
+        generateButton.textContent = "Generating...";
+      } catch (error) {
+        generationStarting = false;
+        const message = error.message || "Could not start generation.";
+        generateButton.textContent = generationFailureLabel(message);
+        generateButton.title = message;
+        generateButton.disabled = false;
+      }
+    });
+    const closeModelMenu = () => {
+      modelMenu.hidden = true;
+      modelSelect.setAttribute("aria-expanded", "false");
+    };
+    const renderModels = () => {
+      const query = modelSearch.value.trim().toLocaleLowerCase();
+      const filtered = availableModels.filter(model =>
+        `${model.name} ${model.id}`.toLocaleLowerCase().includes(query)
+      );
+      const groups = [
+        ["Recommended", filtered.filter(model => recommendedModelIds.has(model.id))],
+        ["Free", filtered.filter(model =>
+          model.is_free && !recommendedModelIds.has(model.id)
+        )],
+        ["Other", filtered.filter(model =>
+          !model.is_free && !recommendedModelIds.has(model.id)
+        )]
+      ].filter(([, models]) => models.length > 0);
+      if (groups.length === 0) {
+        modelOptions.replaceChildren();
+        const message = document.createElement("div");
+        message.className = "model-group-label";
+        message.textContent = availableModels.length === 0
+          ? "No models available"
+          : "No matching models";
+        modelOptions.append(message);
+        return;
+      }
+      modelOptions.replaceChildren();
+      for (const [label, models] of groups) {
+        const heading = document.createElement("div");
+        heading.className = "model-group-label";
+        heading.textContent = label;
+        modelOptions.append(heading);
+        for (const model of models) {
+          const option = document.createElement("button");
+          option.className = "model-option";
+          option.type = "button";
+          option.role = "option";
+          option.dataset.modelId = model.id;
+          option.setAttribute("aria-selected", String(model.id === selectedModelId));
+          option.textContent = model.name;
+          option.addEventListener("click", () => {
+            selectedModelId = model.id;
+            modelSelect.textContent = option.textContent;
+            closeModelMenu();
+          });
+          modelOptions.append(option);
+        }
+      }
+    };
+    modelSelect.addEventListener("click", () => {
+      if (modelSelect.disabled) return;
+      modelMenu.hidden = !modelMenu.hidden;
+      modelSelect.setAttribute("aria-expanded", String(!modelMenu.hidden));
+      if (!modelMenu.hidden) {
+        renderModels();
+        modelSearch.focus();
+      }
+    });
+    modelSearch.addEventListener("input", renderModels);
+    modelMenu.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        closeModelMenu();
+        modelSelect.focus();
+      }
+    });
+    document.addEventListener("click", event => {
+      if (!modelPicker.contains(event.target)) closeModelMenu();
+    });
+    const setAuthStatus = status => {
+      apiStatus.textContent = status === "user" ? "signed in" : status;
+      authButton.textContent = status === "user" ? "Log out" : "Auth via OpenRouter";
+      authButton.dataset.action = status === "user" ? "logout" : "login";
+    };
+    const isServerMode = document.documentElement.dataset.serverMode === "true";
+    const hasLocalBackend = isServerMode || window.location.protocol === "http:" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    const loadAuthStatus = async () => {
+      try {
+        const response = await fetch("/api/auth-status", {cache: "no-store"});
+        if (!response.ok) {
+          throw new Error(`Authentication status request failed with status ${response.status}`);
+        }
+        const {status} = await response.json();
+        if (status !== "default" && status !== "not found" && status !== "user") {
+          throw new Error("Authentication status response was invalid");
+        }
+        setAuthStatus(status);
+      } catch (error) {
+        apiStatus.textContent = "unavailable";
+        console.error("Could not load API authentication status:", error);
+      }
+    };
+    const loadModels = async () => {
+      modelSelect.disabled = true;
+      modelSelect.textContent = "Loading models...";
+      try {
+        const response = await fetch("/api/models?api=openrouter", {
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          throw new Error(`Model request failed with status ${response.status}`);
+        }
+        availableModels = await response.json();
+        const preferred = availableModels.find(model =>
+          model.id === "liquid/lfm-2.5-2.6b:free"
+        );
+        selectedModelId = preferred?.id || availableModels[0]?.id || "";
+        const selectedModel = availableModels.find(model => model.id === selectedModelId);
+        modelSelect.textContent = selectedModel?.name || "No models available";
+        modelSelect.disabled = availableModels.length === 0;
+        renderModels();
+      } catch (error) {
+        modelSelect.textContent = "Could not load models";
+        console.error("Could not load models:", error);
+      }
+    };
+    authButton.addEventListener("click", async () => {
+      if (authButton.dataset.action !== "logout") {
+        window.location.assign("/api/auth/start");
+        return;
+      }
+      authButton.disabled = true;
+      try {
+        const response = await fetch("/api/auth/logout", {
+          method: "POST",
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          throw new Error(`Logout request failed with status ${response.status}`);
+        }
+        const {status} = await response.json();
+        if (status !== "default" && status !== "not found") {
+          throw new Error("Logout response status was invalid");
+        }
+        setAuthStatus(status);
+        await loadModels();
+      } catch (error) {
+        console.error("Could not log out of OpenRouter:", error);
+        apiStatus.textContent = "logout failed";
+      } finally {
+        authButton.disabled = false;
+      }
+    });
+    const authResult = new URLSearchParams(window.location.search).get("auth");
+    if (authResult === "success") {
+      setAuthStatus("user");
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (authResult === "denied") {
+      setAuthStatus("not found");
+      apiStatus.textContent = "sign-in cancelled";
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    if (hasLocalBackend) {
+      loadAuthStatus();
+      loadModels();
+    } else {
+      authButton.disabled = true;
+      apiStatus.textContent = "unavailable";
+      modelSelect.textContent = "Use --web mode";
+    }
+
+    const graph = JSON.parse(document.getElementById("graph-data").textContent);
+    const svg = document.getElementById("graph-svg");
+    const canvas = document.querySelector(".canvas");
+    let resizeGraphViewport = null;
+    let resetGraphView = null;
+    window.addEventListener("keydown", event => {
+      const target = event.target;
+      if (event.code !== "Space" || event.repeat ||
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.matches("input, textarea, select, button"))) {
+        return;
+      }
+      event.preventDefault();
+      resetGraphView?.();
+    });
+    canvas.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || event.target.closest?.(".node")) return;
+      event.preventDefault();
+      canvas.setPointerCapture(event.pointerId);
+      canvas.classList.add("panning");
+      canvas.dataset.panPointerId = String(event.pointerId);
+      canvas.dataset.panX = String(event.clientX);
+      canvas.dataset.panY = String(event.clientY);
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (canvas.dataset.panPointerId !== String(event.pointerId)) return;
+      const deltaX = event.clientX - Number(canvas.dataset.panX);
+      const deltaY = event.clientY - Number(canvas.dataset.panY);
+      canvas.scrollLeft -= deltaX;
+      canvas.scrollTop -= deltaY;
+      canvas.dataset.panX = String(event.clientX);
+      canvas.dataset.panY = String(event.clientY);
+    });
+    const finishCanvasPan = event => {
+      if (canvas.dataset.panPointerId !== String(event.pointerId)) return;
+      delete canvas.dataset.panPointerId;
+      delete canvas.dataset.panX;
+      delete canvas.dataset.panY;
+      canvas.classList.remove("panning");
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    };
+    canvas.addEventListener("pointerup", finishCanvasPan);
+    canvas.addEventListener("pointercancel", finishCanvasPan);
+    canvas.addEventListener("lostpointercapture", finishCanvasPan);
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const makeSvgElement = (tag, attributes = {}) => {
+      const element = document.createElementNS(svgNamespace, tag);
+      for (const [name, value] of Object.entries(attributes)) {
+        element.setAttribute(name, value);
+      }
+      return element;
+    };
+
+    const wasmBytes = Uint8Array.from(
+      atob(document.getElementById("router-wasm").textContent.trim()),
+      character => character.charCodeAt(0)
+    );
+    const routerModule = new WebAssembly.Module(wasmBytes);
+    const router = new WebAssembly.Instance(routerModule).exports;
+
+    let pollingInterval;
+    const poll = async () => {
+      try {
+        const after = lastRenderedGenerationId === null
+          ? ""
+          : `?after=${lastRenderedGenerationId}`;
+        const response = await fetch(`/api/poll${after}`, {cache: "no-store"});
+        if (!response.ok) {
+          throw new Error(`Polling request failed with status ${response.status}`);
+        }
+        const result = await response.json();
+        if (generationStarting ||
+          (activeGenerationId !== null && result.id < activeGenerationId)) return;
+        if (result.status === "running") {
+          generateButton.disabled = true;
+          generateButton.textContent = "Generating...";
+        } else if (result.status === "idle") {
+          generateButton.disabled = false;
+          generateButton.textContent = "Generate";
+        } else if (result.status === "ready") {
+          generateButton.disabled = false;
+          if (result.graph && lastRenderedGenerationId !== result.id) {
+            renderGraph(result.graph);
+            lastRenderedGenerationId = result.id;
+            generateButton.textContent = "Generated";
+            generateButton.title = "";
+          }
+        } else if (result.status === "failed") {
+          generateButton.disabled = false;
+          if (lastRenderedGenerationId !== result.id) {
+            const message = result.error || "Graph generation failed.";
+            generateButton.textContent = generationFailureLabel(message);
+            generateButton.title = message;
+            lastRenderedGenerationId = result.id;
+          }
+        }
+      } catch (error) {
+        window.clearInterval(pollingInterval);
+        console.error("Polling stopped:", error);
+      }
+    };
+    poll();
+    pollingInterval = window.setInterval(poll, 3_000);
+
+    const renderGraph = graph => {
+    svg.replaceChildren();
+    const graphDetails = document.getElementById("graph-details");
+    graphDetails.replaceChildren();
+    if (graph.name) {
+      const title = document.createElement("h1");
+      title.textContent = graph.name;
+      graphDetails.append(title);
+    }
+    if (graph.description) {
+      const description = document.createElement("p");
+      description.className = "graph-description";
+      description.textContent = graph.description;
+      graphDetails.append(description);
+    }
+    const initialGraphWidth = graph.width;
+    const initialGraphHeight = graph.height;
+    const viewportPadding = 48;
+    let viewMinX = 0;
+    let viewMinY = 0;
+    let viewWidth = graph.width;
+    let viewHeight = graph.height;
+    let viewportInitialized = false;
+    let crossBackground = null;
+
+    const updateSvgViewport = () => {
+      const previousMinX = viewMinX;
+      const previousMinY = viewMinY;
+      const minX = Math.min(0, ...graph.nodes.map(node => node.x - viewportPadding)) -
+        canvas.clientWidth;
+      const minY = Math.min(0, ...graph.nodes.map(node => node.y - viewportPadding)) -
+        canvas.clientHeight;
+      const maxX = Math.max(
+        initialGraphWidth,
+        ...graph.nodes.map(node => node.x + node.width + viewportPadding)
+      ) + canvas.clientWidth;
+      const maxY = Math.max(
+        initialGraphHeight,
+        ...graph.nodes.map(node => node.y + node.height + viewportPadding)
+      ) + canvas.clientHeight;
+      viewMinX = minX;
+      viewMinY = minY;
+      viewWidth = maxX - minX;
+      viewHeight = maxY - minY;
+      svg.setAttribute("width", viewWidth);
+      svg.setAttribute("height", viewHeight);
+      svg.setAttribute("viewBox", `${viewMinX} ${viewMinY} ${viewWidth} ${viewHeight}`);
+      if (crossBackground) {
+        crossBackground.setAttribute("x", viewMinX);
+        crossBackground.setAttribute("y", viewMinY);
+        crossBackground.setAttribute("width", viewWidth);
+        crossBackground.setAttribute("height", viewHeight);
+      }
+      if (viewportInitialized) {
+        canvas.scrollLeft += previousMinX - viewMinX;
+        canvas.scrollTop += previousMinY - viewMinY;
+      } else {
+        viewportInitialized = true;
+        canvas.scrollTo(canvas.clientWidth, canvas.clientHeight);
+      }
+    };
+
+    if (resizeGraphViewport) {
+      window.removeEventListener("resize", resizeGraphViewport);
+    }
+    resizeGraphViewport = updateSvgViewport;
+    window.addEventListener("resize", resizeGraphViewport);
+    updateSvgViewport();
+
+    const definitions = makeSvgElement("defs");
+    if (document.documentElement.dataset.pattern === "crosses") {
+      const crossPattern = makeSvgElement("pattern", {
+        id: "cross-pattern",
+        width: "200",
+        height: "200",
+        patternUnits: "userSpaceOnUse"
+      });
+      crossPattern.append(makeSvgElement("path", {
+        d: "M100 96.5v7M96.5 100h7",
+        fill: "none",
+        stroke: "var(--pattern-line)",
+        "stroke-width": "1",
+        "stroke-linecap": "round"
+      }));
+      definitions.append(crossPattern);
+      svg.append(definitions);
+      crossBackground = makeSvgElement("rect", {
+        x: viewMinX,
+        y: viewMinY,
+        width: viewWidth,
+        height: viewHeight,
+        fill: "url(#cross-pattern)"
+      });
+      svg.append(crossBackground);
+    } else {
+      svg.append(definitions);
+    }
+    const arrow = makeSvgElement("marker", {
+      id: "arrow",
+      markerWidth: "8",
+      markerHeight: "6",
+      markerUnits: "userSpaceOnUse",
+      viewBox: "0 0 8 6",
+      refX: "7",
+      refY: "3",
+      orient: "auto-start-reverse"
+    });
+    arrow.append(makeSvgElement("path", {
+      d: "M1,1 L6,3 L1,5",
+      fill: "none",
+      stroke: "var(--connection-color)",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    }));
+    definitions.append(arrow);
+    const edgeLayer = makeSvgElement("g", {class: "edges"});
+    const nodeLayer = makeSvgElement("g", {class: "nodes"});
+    svg.append(edgeLayer, nodeLayer);
+
+    const nodesById = new Map(graph.nodes.map((node, index) => [node.id, {node, index}]));
+    const edgeData = new Float64Array(graph.edges.flatMap(edge => {
+      const from = nodesById.get(edge.from);
+      const to = nodesById.get(edge.to);
+      if (!from || !to) {
+        throw new Error(`Graph edge references an unknown node: ${edge.from} -> ${edge.to}`);
+      }
+      return [from.index, to.index];
+    }));
+    const maxRoutePoints = graph.nodes.length * 4 + 16;
+    const outputCapacity = Math.max(1, graph.edges.length * (1 + maxRoutePoints * 2));
+    const computeRoutes = () => {
+      const nodeData = new Float64Array(graph.nodes.flatMap(node => [
+        node.x, node.y, node.width, node.height
+      ]));
+      const nodePointer = router.alloc_f64(nodeData.length);
+      const edgePointer = router.alloc_f64(edgeData.length);
+      const outputPointer = router.alloc_f64(outputCapacity);
+      try {
+        const memory = router.memory;
+        new Float64Array(memory.buffer, nodePointer, nodeData.length).set(nodeData);
+        new Float64Array(memory.buffer, edgePointer, edgeData.length).set(edgeData);
+        const written = router.route_graph(
+          nodePointer,
+          graph.nodes.length,
+          edgePointer,
+          graph.edges.length,
+          outputPointer,
+          outputCapacity
+        );
+        if (written === 0 && graph.edges.length !== 0) {
+          throw new Error("libavoid could not calculate routes for the graph");
+        }
+        const values = new Float64Array(memory.buffer, outputPointer, written);
+        const routes = [];
+        let offset = 0;
+        for (const edge of graph.edges) {
+          const pointCount = values[offset++];
+          if (!Number.isInteger(pointCount) || pointCount < 2 || offset + pointCount * 2 > written) {
+            throw new Error("libavoid returned an invalid edge route");
+          }
+          const points = [];
+          for (let index = 0; index < pointCount; index++) {
+            points.push({x: values[offset++], y: values[offset++]});
+          }
+          routes.push(points);
+        }
+        return routes;
+      } finally {
+        router.free_f64(nodePointer, nodeData.length);
+        router.free_f64(edgePointer, edgeData.length);
+        router.free_f64(outputPointer, outputCapacity);
+      }
+    };
+
+    const midpointOfRoute = points => {
+      const lengths = points.slice(1).map((point, index) =>
+        Math.hypot(point.x - points[index].x, point.y - points[index].y)
+      );
+      const halfLength = lengths.reduce((total, length) => total + length, 0) / 2;
+      let traversed = 0;
+      for (let index = 0; index < lengths.length; index++) {
+        const length = lengths[index];
+        if (traversed + length >= halfLength) {
+          const fraction = length === 0 ? 0 : (halfLength - traversed) / length;
+          return {
+            x: points[index].x + (points[index + 1].x - points[index].x) * fraction,
+            y: points[index].y + (points[index + 1].y - points[index].y) * fraction
+          };
+        }
+        traversed += length;
+      }
+      return points[0];
+    };
+
+    const isInsideNode = (point, node) =>
+      point.x > node.x && point.x < node.x + node.width &&
+      point.y > node.y && point.y < node.y + node.height;
+
+    const intersectNodeBoundary = (inside, outside, node) => {
+      const dx = outside.x - inside.x;
+      const dy = outside.y - inside.y;
+      const tx = dx > 0
+        ? (node.x + node.width - inside.x) / dx
+        : dx < 0
+          ? (node.x - inside.x) / dx
+          : Infinity;
+      const ty = dy > 0
+        ? (node.y + node.height - inside.y) / dy
+        : dy < 0
+          ? (node.y - inside.y) / dy
+          : Infinity;
+      const t = Math.min(tx, ty);
+      if (!Number.isFinite(t) || t < 0 || t > 1) {
+        throw new Error("Could not find where an edge route exits a node");
+      }
+      return {x: inside.x + dx * t, y: inside.y + dy * t};
+    };
+
+    const clipRouteAtNode = (points, node) => {
+      for (let index = 1; index < points.length; index++) {
+        if (!isInsideNode(points[index], node)) {
+          return [
+            intersectNodeBoundary(points[index - 1], points[index], node),
+            ...points.slice(index)
+          ];
+        }
+      }
+      throw new Error("Edge route never exits its node");
+    };
+
+    const edgeElements = graph.edges.map(edge => {
+      const path = makeSvgElement("path", {
+        class: edge.dotted ? "edge dotted" : "edge"
+      });
+      if (edge.arrow_start) path.setAttribute("marker-start", "url(#arrow)");
+      if (edge.arrow_end) path.setAttribute("marker-end", "url(#arrow)");
+      edgeLayer.append(path);
+
+      let label = null;
+      if (edge.label) {
+        label = makeSvgElement("text", {
+          class: "edge-label",
+          "text-anchor": "middle"
+        });
+        label.textContent = edge.label;
+        edgeLayer.append(label);
+      }
+      return {path, label};
+    });
+
+    const dragRouteDelayFactor = 6;
+    const hideEdgesDelayThreshold = 100;
+    let nextDragRouteAt = 0;
+    const scheduleDragRoute = drag => {
+      if (drag.routeTimer !== null) return;
+      const delay = Math.max(0, nextDragRouteAt - performance.now());
+      drag.routeTimer = setTimeout(() => {
+        drag.routeTimer = null;
+        if (drag.active) updateEdgeRoutes({drag});
+      }, delay);
+    };
+    const updateEdgeRoutes = ({drag = null, force = false} = {}) => {
+      if (drag && !force) {
+        if (drag.clientX === drag.lastResolvedClientX &&
+          drag.clientY === drag.lastResolvedClientY) {
+          if (drag.routeTimer !== null) {
+            clearTimeout(drag.routeTimer);
+            drag.routeTimer = null;
+          }
+          edgeLayer.style.visibility = "visible";
+          return false;
+        }
+        const remainingDelay = nextDragRouteAt - performance.now();
+        if (remainingDelay > 0) {
+          if (remainingDelay > hideEdgesDelayThreshold) {
+            edgeLayer.style.visibility = "hidden";
+          }
+          scheduleDragRoute(drag);
+          return false;
+        }
+      }
+      if (drag && drag.routeTimer !== null) {
+        clearTimeout(drag.routeTimer);
+        drag.routeTimer = null;
+      }
+
+      const startedAt = performance.now();
+      const routes = computeRoutes();
+      routes.forEach((points, index) => {
+        const edge = graph.edges[index];
+        const from = nodesById.get(edge.from).node;
+        const to = nodesById.get(edge.to).node;
+        const clippedPoints = clipRouteAtNode(points, from);
+        const visiblePoints = clipRouteAtNode(clippedPoints.slice().reverse(), to).reverse();
+        const {path, label} = edgeElements[index];
+        const pathData = visiblePoints.map((point, pointIndex) =>
+          `${pointIndex === 0 ? "M" : "L"} ${point.x} ${point.y}`
+        ).join(" ");
+        path.setAttribute("d", pathData);
+        if (label) {
+          const midpoint = midpointOfRoute(visiblePoints);
+          label.setAttribute("x", midpoint.x);
+          label.setAttribute("y", midpoint.y - 5);
+        }
+      });
+      edgeLayer.style.visibility = "visible";
+      const elapsed = performance.now() - startedAt;
+      nextDragRouteAt = drag && !force
+        ? performance.now() + elapsed * dragRouteDelayFactor
+        : 0;
+      if (drag) {
+        drag.lastResolvedClientX = drag.clientX;
+        drag.lastResolvedClientY = drag.clientY;
+        if (!force) scheduleDragRoute(drag);
+      }
+      return true;
+    };
+    updateEdgeRoutes();
+
+    resetGraphView = () => {
+      canvas.scrollTo({
+        left: -viewMinX,
+        top: -viewMinY,
+        behavior: "smooth"
+      });
+    };
+
+    const wrapText = (text, maxChars, maxLines) => {
+      const lines = [];
+      let current = "";
+      for (const word of text.split(/\s+/).filter(Boolean)) {
+        if (current && current.length + 1 + word.length > maxChars) {
+          lines.push(current);
+          if (lines.length === maxLines) break;
+          current = "";
+        }
+        current += `${current ? " " : ""}${word}`;
+      }
+      if (current && lines.length < maxLines) lines.push(current);
+      if (!lines.length) lines.push("");
+      if (lines.length === maxLines && text.length > lines.join("").length) {
+        lines[lines.length - 1] += "...";
+      }
+      return lines;
+    };
+
+    const appendTextLines = (group, className, text, x, y, lineHeight) => {
+      wrapText(text, 24, 3).forEach((line, index) => {
+        const textElement = makeSvgElement("text", {
+          class: className,
+          x,
+          y: y + index * lineHeight,
+          "text-anchor": "middle"
+        });
+        textElement.textContent = line;
+        group.append(textElement);
+      });
+    };
+
+    for (const node of graph.nodes) {
+      const group = makeSvgElement("g", {class: "node"});
+      group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+      group.append(makeSvgElement("rect", {
+        x: 0,
+        y: 0,
+        width: node.width,
+        height: node.height,
+        rx: 12,
+        ry: 12
+      }));
+      const title = node.name || "";
+      const description = node.description || "";
+
+      if (title) {
+        appendTextLines(group, "node-title", title, node.width / 2, 32, 18);
+      }
+      if (description) {
+        const titleLines = wrapText(title, 24, 2).length;
+        const descriptionY = title
+          ? 42 + titleLines * 17
+          : 50;
+        appendTextLines(
+          group,
+          "node-description",
+          description,
+          node.width / 2,
+          descriptionY,
+          15
+        );
+      }
+      nodeLayer.append(group);
+
+      let drag = null;
+      group.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const bounds = svg.getBoundingClientRect();
+        drag = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          scaleX: viewWidth / bounds.width,
+          scaleY: viewHeight / bounds.height,
+          lastResolvedClientX: event.clientX,
+          lastResolvedClientY: event.clientY,
+          routeTimer: null,
+          active: true
+        };
+        group.classList.add("dragging");
+        group.setPointerCapture(event.pointerId);
+      });
+
+      group.addEventListener("pointermove", event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        const deltaX = (event.clientX - drag.clientX) * drag.scaleX;
+        const deltaY = (event.clientY - drag.clientY) * drag.scaleY;
+        drag.clientX = event.clientX;
+        drag.clientY = event.clientY;
+        node.x += deltaX;
+        node.y += deltaY;
+        group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+        updateSvgViewport();
+        updateEdgeRoutes({drag});
+      });
+
+      const finishDragging = event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        drag.active = false;
+        if (drag.routeTimer !== null) {
+          clearTimeout(drag.routeTimer);
+          drag.routeTimer = null;
+        }
+        drag = null;
+        group.classList.remove("dragging");
+        if (group.hasPointerCapture(event.pointerId)) {
+          group.releasePointerCapture(event.pointerId);
+        }
+        updateEdgeRoutes({force: true});
+      };
+      group.addEventListener("pointerup", finishDragging);
+      group.addEventListener("pointercancel", finishDragging);
+      group.addEventListener("lostpointercapture", finishDragging);
+    }
+    };
+    renderGraph(graph);
+  </script>
 </body>
+
 </html>

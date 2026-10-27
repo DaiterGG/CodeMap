@@ -1,0 +1,10 @@
+[package]
+name = "codemap-router"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libavoid = { git = "https://github.com/boxabirds/libavoid-rust", rev = "f72fe0b6a541b8f32a1c160d38c889f0c697eecd" }
+
+[lib]
+crate-type = ["cdylib"]

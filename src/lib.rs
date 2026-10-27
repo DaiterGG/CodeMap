@@ -9,3 +9,5 @@ pub mod mermaid;
 pub mod page;
 pub mod prompts;
 pub mod step;
+pub mod test_model;
+pub mod web;
