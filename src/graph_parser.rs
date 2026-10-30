@@ -1,6 +1,7 @@
 //! Parses and validates the program's custom graph syntax, reporting syntax and
 //! redundant-connection diagnostics used to request LLM corrections.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +30,14 @@ pub struct GraphNode {
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub sources: Vec<SourceReference>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SourceReference {
+    pub path: String,
+    pub start: Option<usize>,
+    pub end: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +92,7 @@ enum Token {
 struct NodeLabel {
     name: Option<String>,
     description: Option<String>,
+    sources: Vec<SourceReference>,
 }
 
 #[derive(Clone, Debug)]
@@ -100,7 +110,6 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
     let mut header_seen = false;
     let mut wrapper_seen = false;
     let mut wrapper_closed = false;
-    let mut direction = GraphDirection::TopDown;
     let mut graph_name = None;
     let mut graph_description = None;
     let mut declarations = HashSet::new();
@@ -126,7 +135,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                     "Use exactly one `<graph type=\"TD|LR\" ...>` wrapper around the graph.",
                 ));
             }
-            let (parsed_direction, name, description) =
+            let (_, name, description) =
                 parse_graph_wrapper(line).map_err(|explanation| {
                     diagnostic(
                         DiagnosticKind::Syntax,
@@ -138,7 +147,6 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                 })?;
             header_seen = true;
             wrapper_seen = true;
-            direction = parsed_direction;
             graph_name = name;
             graph_description = description;
             continue;
@@ -222,6 +230,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                         id: id.clone(),
                         name: label.name.clone(),
                         description: label.description.clone(),
+                        sources: label.sources.clone(),
                     });
                 }
             }
@@ -354,7 +363,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
     }
 
     Ok(Graph {
-        direction,
+        direction: GraphDirection::TopDown,
         name: graph_name,
         description: graph_description,
         nodes,
@@ -514,34 +523,110 @@ fn tokenize_line(line: &str) -> Result<Vec<Token>, String> {
 }
 
 fn parse_node_label(label: &str) -> Result<NodeLabel, String> {
-    let name_open = label.find("<name>");
-    let name_close = label.find("</name>");
-    let desc_open = label.find("<desc>");
-    let desc_close = label.find("</desc>");
-    match (name_open, name_close, desc_open, desc_close) {
-        (None, None, None, None) => Err(
+    let (name, name_position) = parse_label_tag(label, "name")?;
+    let (description, description_position) = parse_label_tag(label, "desc")?;
+    let (source, source_position) = parse_label_tag(label, "source")?;
+    if name.is_none() && description.is_none() {
+        return Err(
             "The node label must contain a complete `<name>...</name>` tag, a complete `<desc>...</desc>` tag, or both."
                 .to_owned(),
-        ),
-        (Some(no), Some(nc), None, None) if no < nc => Ok(NodeLabel {
-            name: Some(label[no + 6..nc].trim().to_owned()),
-            description: None,
-        }),
-        (None, None, Some(do_), Some(dc)) if do_ < dc => Ok(NodeLabel {
-            name: None,
-            description: Some(label[do_ + 6..dc].trim().to_owned()),
-        }),
-        (Some(no), Some(nc), Some(do_), Some(dc)) if no < nc && nc < do_ && do_ < dc => {
-            Ok(NodeLabel {
-                name: Some(label[no + 6..nc].trim().to_owned()),
-                description: Some(label[do_ + 6..dc].trim().to_owned()),
-            })
-        }
-        _ => Err(
-            "The node label has an incomplete name/description tag or its name and description tags are out of order."
-                .to_owned(),
-        ),
+        );
     }
+
+    let positions = [name_position, description_position, source_position]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if positions.windows(2).any(|pair| pair[0] > pair[1]) {
+        return Err(
+            "The node label tags must appear in name, description, source order.".to_owned(),
+        );
+    }
+
+    let sources = match source {
+        Some(source) => parse_source_references(&source)?,
+        None => Vec::new(),
+    };
+    Ok(NodeLabel {
+        name,
+        description,
+        sources,
+    })
+}
+
+fn parse_label_tag(label: &str, tag: &str) -> Result<(Option<String>, Option<usize>), String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let open_position = label.find(&open);
+    let close_position = label.find(&close);
+    match (open_position, close_position) {
+        (None, None) => Ok((None, None)),
+        (Some(start), Some(end)) if start < end => {
+            let content_start = start + open.len();
+            if label[content_start..].contains(&open) || label[..end].contains(&close) {
+                return Err(format!(
+                    "The node label contains more than one `<{tag}>` tag."
+                ));
+            }
+            Ok((
+                Some(label[content_start..end].trim().to_owned()),
+                Some(start),
+            ))
+        }
+        _ => Err(format!("The node label has an incomplete `<{tag}>` tag.")),
+    }
+}
+
+fn parse_source_references(source: &str) -> Result<Vec<SourceReference>, String> {
+    let mut references = Vec::new();
+    for entry in source
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
+        let (path, range) = entry.rsplit_once(':').ok_or_else(|| {
+            "Source references must use `path:full` or `path:start-end` syntax.".to_owned()
+        })?;
+        let path = path.trim().replace('\\', "/");
+        if path.is_empty()
+            || path.starts_with('/')
+            || path
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+        {
+            return Err(
+                "Source reference paths must be relative paths inside the codebase.".to_owned(),
+            );
+        }
+        let (start, end) = if range == "full" {
+            (None, None)
+        } else {
+            let (start, end) = range
+                .split_once('-')
+                .ok_or_else(|| "Source line ranges must use `path:start-end` syntax.".to_owned())?;
+            let start = start
+                .parse::<usize>()
+                .ok()
+                .filter(|line| *line > 0)
+                .ok_or_else(|| {
+                    "Source reference line numbers must be positive integers.".to_owned()
+                })?;
+            let end = end
+                .parse::<usize>()
+                .ok()
+                .filter(|line| *line >= start)
+                .ok_or_else(|| {
+                    "Source range end must be an integer greater than or equal to its start."
+                        .to_owned()
+                })?;
+            (Some(start), Some(end))
+        };
+        references.push(SourceReference { path, start, end });
+    }
+    if references.is_empty() {
+        return Err("A source tag must contain at least one source reference.".to_owned());
+    }
+    Ok(references)
 }
 
 fn read_operator(bytes: &[u8]) -> Option<(&'static str, usize)> {
@@ -747,6 +832,43 @@ MainLoop --> WriteOutput
     }
 
     #[test]
+    fn parses_multiple_full_file_and_line_range_sources() {
+        let graph = r#"<graph type="TD">
+Node["<name>Node</name><desc>Details</desc><source>src/main.rs:full,src/lib.rs:10-24</source>"]
+</graph>"#;
+
+        let parsed = parse(graph).unwrap();
+        assert_eq!(
+            parsed.nodes[0].sources,
+            vec![
+                SourceReference {
+                    path: "src/main.rs".to_owned(),
+                    start: None,
+                    end: None,
+                },
+                SourceReference {
+                    path: "src/lib.rs".to_owned(),
+                    start: Some(10),
+                    end: Some(24),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_or_invalid_source_references() {
+        for source in ["../secret.rs:full", "src/main.rs:0-5", "src/main.rs:9-4"] {
+            let graph = format!(
+                "<graph type=\"TD\">\nNode[\"<name>Node</name><source>{source}</source>\"]\n</graph>"
+            );
+            assert!(
+                validate(&graph).is_err(),
+                "accepted invalid source {source}"
+            );
+        }
+    }
+
+    #[test]
     fn accepts_graph_wrapper_metadata_and_inline_node_declarations() {
         let graph = r#"<graph type="LR" name="Custom data processor layer" desc="Checks data against groundtruth">
 Input["<name>Input</name><desc>Parse input</desc>"] --> Processor["<name>Processor</name><desc>Run calculations</desc>"]
@@ -754,7 +876,7 @@ Processor --> Output["<name>Output</name>"]
 </graph>"#;
 
         let parsed = parse(graph).unwrap();
-        assert_eq!(parsed.direction, GraphDirection::LeftRight);
+        assert_eq!(parsed.direction, GraphDirection::TopDown);
         assert_eq!(parsed.name.as_deref(), Some("Custom data processor layer"));
         assert_eq!(
             parsed.description.as_deref(),

@@ -120,7 +120,7 @@ mod tests {
 
         assert_eq!(path.file_name().unwrap(), "graph.mmd");
         let source = fs::read_to_string(path).unwrap();
-        assert!(source.starts_with("graph LR\n"));
+        assert!(source.starts_with("graph TD\n"));
         assert!(source.contains("accTitle: Processor"));
         assert!(source.contains("accDescr: Read & transform"));
         assert!(source.contains("Input[\"**Input**<br/>Read #amp; transform\"]"));

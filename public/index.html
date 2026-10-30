@@ -22,6 +22,16 @@
       --muted-color: rgba(255, 255, 255, 0.65);
       --button-bg: #101010;
       --button-hover-bg: #1a1a1a;
+      --code-keyword: #ff7b72;
+      --code-string: #a5d6ff;
+      --code-number: #79c0ff;
+      --code-comment: #8b949e;
+      --code-title: #d2a8ff;
+      --code-literal: #79c0ff;
+      --code-attribute: #79c0ff;
+      --code-meta: #ffa657;
+      --code-addition: #aff5b4;
+      --code-deletion: #ffdcd7;
     }
 
     :root[data-theme="light"] {
@@ -39,6 +49,16 @@
       --muted-color: #57606a;
       --button-bg: #fff;
       --button-hover-bg: #f4f6f8;
+      --code-keyword: #cf222e;
+      --code-string: #0a3069;
+      --code-number: #0550ae;
+      --code-comment: #6e7781;
+      --code-title: #8250df;
+      --code-literal: #0550ae;
+      --code-attribute: #0550ae;
+      --code-meta: #953800;
+      --code-addition: #116329;
+      --code-deletion: #82071e;
     }
 
     body {
@@ -66,12 +86,253 @@
       height: 100%;
     }
 
+    .resize-handle {
+      position: relative;
+      z-index: 1;
+      flex: 0 0 8px;
+      width: 8px;
+      margin-inline: -16px;
+      cursor: col-resize;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .resize-handle::after {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 3px;
+      width: 2px;
+      border-radius: 2px;
+      background: transparent;
+      content: "";
+    }
+
+    .resize-handle:hover::after,
+    .resize-handle:focus-visible::after {
+      background: var(--line-color);
+    }
+
+    .resize-handle:focus {
+      outline: none;
+    }
+
+    .node-panel {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      gap: 16px;
+    }
+
+    .node-panel-heading {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .node-panel-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .node-panel-title {
+      min-width: 0;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
+    .node-panel-description {
+      margin: 0;
+      color: var(--muted-color);
+      overflow-wrap: anywhere;
+    }
+
+    .node-panel-tabs {
+      display: flex;
+      flex: 0 0 auto;
+      border-bottom: 1px solid var(--line-color);
+    }
+
+    .node-panel-tab {
+      flex: 1 1 50%;
+      padding: 8px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      color: var(--muted-color);
+      background: transparent;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .node-panel-tab[aria-selected="true"] {
+      border-bottom-color: var(--line-color);
+      color: var(--text-color);
+    }
+
+    .node-panel-content {
+      overflow: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+      color: var(--muted-color);
+    }
+
+    .source-file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .source-file {
+      min-width: 0;
+      border-bottom: 1px solid var(--canvas-border);
+    }
+
+    .source-file summary {
+      overflow-wrap: anywhere;
+      padding: 8px 0;
+      color: var(--text-color);
+      cursor: pointer;
+    }
+
+    .source-file pre {
+      overflow: auto;
+      max-height: 50vh;
+      margin: 0;
+      padding: 0 0 10px 20px;
+      color: var(--text-color);
+      font: 12px/1.5 Consolas, "Courier New", monospace;
+      white-space: pre;
+      tab-size: 4;
+    }
+
+    .source-code-container {
+      display: flex;
+      max-height: 50vh;
+      overflow: auto;
+    }
+
+    .source-code-container pre {
+      flex: 0 0 auto;
+      max-height: none;
+      overflow: visible;
+      margin: 0;
+      padding-top: 0;
+      padding-bottom: 10px;
+      color: var(--text-color);
+    }
+
+    .source-code-container .source-line-numbers {
+      position: sticky;
+      left: 0;
+      padding-right: 12px;
+      border-right: 1px solid var(--canvas-border);
+      background: var(--node-bg);
+      color: var(--muted-color);
+      text-align: right;
+      user-select: none;
+    }
+
+    .source-code-container .source-code {
+      min-width: max-content;
+      padding-left: 12px;
+    }
+
+    .source-code code {
+      font: inherit;
+    }
+
+    .source-code .hljs {
+      color: var(--text-color);
+      background: transparent;
+    }
+
+    .source-code .hljs-comment,
+    .source-code .hljs-quote {
+      color: var(--code-comment);
+      font-style: italic;
+    }
+
+    .source-code .hljs-keyword,
+    .source-code .hljs-selector-tag,
+    .source-code .hljs-subst {
+      color: var(--code-keyword);
+    }
+
+    .source-code .hljs-string,
+    .source-code .hljs-doctag,
+    .source-code .hljs-regexp {
+      color: var(--code-string);
+    }
+
+    .source-code .hljs-number,
+    .source-code .hljs-literal,
+    .source-code .hljs-symbol,
+    .source-code .hljs-bullet {
+      color: var(--code-number);
+    }
+
+    .source-code .hljs-title,
+    .source-code .hljs-section,
+    .source-code .hljs-title.function_,
+    .source-code .hljs-title.class_ {
+      color: var(--code-title);
+    }
+
+    .source-code .hljs-attr,
+    .source-code .hljs-attribute,
+    .source-code .hljs-variable,
+    .source-code .hljs-template-variable,
+    .source-code .hljs-type,
+    .source-code .hljs-built_in {
+      color: var(--code-attribute);
+    }
+
+    .source-code .hljs-meta,
+    .source-code .hljs-name,
+    .source-code .hljs-params {
+      color: var(--code-meta);
+    }
+
+    .source-code .hljs-addition {
+      color: var(--code-addition);
+    }
+
+    .source-code .hljs-deletion {
+      color: var(--code-deletion);
+    }
+
+    .source-file-status {
+      padding: 0 10px 10px;
+      color: var(--muted-color);
+    }
+
+    .node-summary-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .node-summary-controls .web-control {
+      flex-direction: column;
+    }
+
+    #generate-summary-button {
+      width: 100%;
+    }
+
     .page-identity {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
       min-width: 0;
-      gap: 4px;
+      gap: 12px;
     }
 
     .graph-details {
@@ -86,7 +347,7 @@
 
     .brand-name {
       font-family: cursive;
-      font-size: 25px;
+      font-size: 34px;
       font-weight: 400;
       line-height: 1;
     }
@@ -145,12 +406,16 @@
       white-space: nowrap;
     }
 
+    #model-select.web-mode-notice {
+      text-align: center;
+    }
+
     .model-menu {
-      position: absolute;
+      position: fixed;
       z-index: 2;
-      bottom: calc(100% + 6px);
+      top: 0;
       left: 0;
-      width: min(420px, calc(100vw - 48px));
+      width: min(420px, calc(100vw - 16px));
       display: flex;
       flex-direction: column-reverse;
       box-sizing: border-box;
@@ -169,12 +434,15 @@
       box-sizing: border-box;
       width: 100%;
       margin-top: 6px;
+      flex: 0 0 auto;
       cursor: text;
     }
 
     .model-options {
       overflow-y: auto;
-      max-height: min(480px, calc(100vh - 120px));
+      max-height: 480px;
+      min-height: 0;
+      flex: 1 1 auto;
     }
 
     .model-group-label {
@@ -247,6 +515,7 @@
       overflow: auto;
       flex: 1 1 auto;
       width: 100%;
+      min-width: 0;
       min-height: 0;
       height: 100%;
       border: 2px solid var(--line-color);
@@ -303,12 +572,55 @@
     }
 
     .node {
-      cursor: grab;
+      cursor: default;
       touch-action: none;
     }
 
-    .node.dragging {
+    .node-action {
+      cursor: default;
+      touch-action: none;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .node-action rect {
+      fill: transparent;
+      stroke: none;
+    }
+
+    .node:hover .node-action {
+      opacity: 1;
+    }
+
+    .node-action-divider {
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .node:hover .node-action-divider {
+      opacity: 1;
+    }
+
+    .node-action:focus {
+      outline: none;
+    }
+
+    .node-move:focus rect {
+      stroke: var(--line-color);
+    }
+
+    .node-move {
+      cursor: grab;
+    }
+
+    .node.dragging .node-move {
       cursor: grabbing;
+    }
+
+    .node-action text {
+      fill: var(--text-color);
+      font-size: 12px;
+      pointer-events: none;
     }
 
     .node-title {
@@ -394,8 +706,28 @@
       }
 
       .page-header {
+        box-sizing: border-box;
+        flex: 0 0 min(40vh, 360px);
         width: 100%;
         min-width: 0;
+        height: auto;
+      }
+
+      .resize-handle {
+        flex: 0 0 8px;
+        width: auto;
+        height: 8px;
+        margin: -16px 0;
+        cursor: row-resize;
+      }
+
+      .resize-handle::after {
+        top: 3px;
+        right: 0;
+        bottom: auto;
+        left: 0;
+        width: auto;
+        height: 2px;
       }
 
       .web-control {
@@ -432,6 +764,8 @@
         <button class="control-button" id="generate-button" type="button">Generate</button>
       </div>
     </div>
+    <div class="resize-handle" id="sidebar-resize-handle" role="separator" aria-orientation="vertical"
+      aria-label="Resize sidebar" aria-valuemin="220" aria-valuenow="280" tabindex="0"></div>
     <div class="canvas"><svg id="graph-svg" role="img" aria-label="Codebase graph"></svg></div>
   </main>
   <dialog class="upload-dialog" id="upload-dialog" aria-labelledby="upload-dialog-title">
@@ -452,15 +786,25 @@
     </div>
   </dialog>
   <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
+  <script type="application/json" id="source-data">{{SOURCE_JSON}}</script>
   <script type="application/octet-stream" id="router-wasm">{{ROUTER_WASM_BASE64}}</script>
+  <script>{{HIGHLIGHT_JS}}</script>
   <script>
     const apiStatus = document.getElementById("api-status");
+    const pageHeader = document.querySelector(".page-header");
+    const defaultSidebarNodes = [...pageHeader.childNodes];
+    const graphDetails = document.getElementById("graph-details");
     const modelSelect = document.getElementById("model-select");
     const modelSearch = document.getElementById("model-search");
     const modelPicker = document.getElementById("model-picker");
     const modelMenu = document.getElementById("model-menu");
     const modelOptions = document.getElementById("model-options");
     const authButton = document.getElementById("openrouter-sign-in-button");
+    const modelControls = document.querySelector(".model-controls");
+    const authButtonParent = authButton.parentNode;
+    const authButtonNextSibling = authButton.nextSibling;
+    const modelControlsParent = modelControls.parentNode;
+    const modelControlsNextSibling = modelControls.nextSibling;
     const uploadCodeButton = document.getElementById("upload-code-button");
     const uploadDialog = document.getElementById("upload-dialog");
     const uploadSource = document.getElementById("upload-source");
@@ -474,6 +818,75 @@
     let generationStarting = false;
     const generationFailureLabel = error =>
       /429|rate.?limit/i.test(error) ? "Generation failed: ratelimited" : "Generation failed";
+    const sourceLanguageByExtension = {
+      cjs: "javascript",
+      bash: "bash",
+      c: "c",
+      cc: "cpp",
+      clj: "clojure",
+      cljc: "clojure",
+      cljx: "clojure",
+      cmake: "cmake",
+      cpp: "cpp",
+      cs: "csharp",
+      cxx: "cpp",
+      css: "css",
+      dart: "dart",
+      dockerfile: "dockerfile",
+      ex: "elixir",
+      exs: "elixir",
+      gradle: "gradle",
+      go: "go",
+      h: "c",
+      htm: "xml",
+      html: "xml",
+      hpp: "cpp",
+      hxx: "cpp",
+      ini: "ini",
+      java: "java",
+      js: "javascript",
+      jsx: "javascript",
+      json: "json",
+      kt: "kotlin",
+      kts: "kotlin",
+      lua: "lua",
+      m: "objectivec",
+      md: "markdown",
+      mjs: "javascript",
+      mts: "typescript",
+      php: "php",
+      pl: "perl",
+      pm: "perl",
+      proto: "protobuf",
+      ps1: "powershell",
+      py: "python",
+      rb: "ruby",
+      rs: "rust",
+      scss: "scss",
+      scala: "scala",
+      sh: "bash",
+      sql: "sql",
+      swift: "swift",
+      toml: "toml",
+      ts: "typescript",
+      tsx: "typescript",
+      vue: "xml",
+      xml: "xml",
+      yaml: "yaml",
+      yml: "yaml"
+    };
+    const sourceLanguage = path => {
+      const filename = path.split(/[\\/]/).pop().toLowerCase();
+      const extension = filename.split(".").pop();
+      const language = sourceLanguageByExtension[extension];
+      return language && hljs.getLanguage(language) ? language : null;
+    };
+    const highlightSourceCode = (path, source) => {
+      const language = sourceLanguage(path);
+      return language
+        ? hljs.highlight(source, {language}).value
+        : hljs.highlightAuto(source).value;
+    };
     const recommendedModelIds = new Set([
       "liquid/lfm-2.5-2.6b:free",
       "inception/mercury-decide:free",
@@ -481,6 +894,172 @@
     ]);
     let availableModels = [];
     let selectedModelId = "";
+    const restoreSidebarControls = () => {
+      closeModelMenu();
+      authButtonParent.insertBefore(authButton, authButtonNextSibling);
+      modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
+      pageHeader.replaceChildren(...defaultSidebarNodes);
+    };
+    const showNodePanel = node => {
+      closeModelMenu();
+      const panel = document.createElement("section");
+      panel.className = "node-panel";
+      panel.setAttribute("aria-label", `${node.name || "Node"} details`);
+
+      const heading = document.createElement("div");
+      heading.className = "node-panel-heading";
+      const titleRow = document.createElement("div");
+      titleRow.className = "node-panel-title-row";
+      const title = document.createElement("h1");
+      title.className = "node-panel-title";
+      title.textContent = node.name || "";
+      const closeButton = document.createElement("button");
+      closeButton.className = "control-button";
+      closeButton.type = "button";
+      closeButton.textContent = "Close";
+      closeButton.setAttribute("aria-label", "Close node details");
+      closeButton.addEventListener("click", restoreSidebarControls);
+      titleRow.append(title, closeButton);
+
+      const description = document.createElement("p");
+      description.className = "node-panel-description";
+      description.textContent = node.description || "";
+      heading.append(titleRow, description);
+
+      const tabs = document.createElement("div");
+      tabs.className = "node-panel-tabs";
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "Node details");
+      const content = document.createElement("div");
+      content.className = "node-panel-content";
+      content.setAttribute("role", "tabpanel");
+      content.setAttribute("aria-live", "polite");
+      const summaryControls = document.createElement("div");
+      summaryControls.className = "node-summary-controls";
+      const generateSummaryButton = document.createElement("button");
+      generateSummaryButton.className = "control-button";
+      generateSummaryButton.id = "generate-summary-button";
+      generateSummaryButton.type = "button";
+      generateSummaryButton.textContent = "Generate node summary";
+      const summaryAuthControl = document.createElement("div");
+      summaryAuthControl.className = "web-control";
+      summaryAuthControl.append(authButton);
+      summaryControls.append(summaryAuthControl, modelControls, generateSummaryButton);
+      const tabButtons = [];
+      const setActiveTab = activeTab => {
+        for (const button of tabButtons) {
+          const selected = button.dataset.tab === activeTab;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+        }
+        closeModelMenu();
+        if (activeTab === "summary") {
+          content.replaceChildren(summaryControls);
+          return;
+        }
+
+        if (!node.sources?.length) {
+          content.textContent = "No source files are referenced for this node.";
+          return;
+        }
+
+        const sourceFileList = document.createElement("div");
+        sourceFileList.className = "source-file-list";
+        for (const reference of node.sources) {
+          const file = document.createElement("details");
+          file.className = "source-file";
+          const fileHeading = document.createElement("summary");
+          const rangeLabel = reference.start === null
+            ? "full"
+            : reference.start === reference.end
+              ? `Line ${reference.start}`
+              : `Line ${reference.start}: ${reference.end}`;
+          fileHeading.textContent = `${reference.path} - ${rangeLabel}`;
+          const sourceStatus = document.createElement("div");
+          sourceStatus.className = "source-file-status";
+          sourceStatus.setAttribute("role", "status");
+          file.append(fileHeading, sourceStatus);
+          file.addEventListener("toggle", async () => {
+            if (!file.open || file.dataset.loaded === "true" || file.dataset.loading === "true") {
+              return;
+            }
+            file.dataset.loading = "true";
+            sourceStatus.textContent = "Loading source...";
+            const query = new URLSearchParams({path: reference.path});
+            if (reference.start !== null && reference.end !== null) {
+              query.set("start", String(reference.start));
+              query.set("end", String(reference.end));
+            }
+            try {
+              let result;
+              if (Object.hasOwn(embeddedSources, reference.path)) {
+                const sourceLines = embeddedSources[reference.path].split(/\r?\n/);
+                const start = reference.start ?? 1;
+                const end = reference.end ?? sourceLines.length;
+                if (reference.start !== null && end > sourceLines.length) {
+                  throw new Error("Source line range is outside the file.");
+                }
+                result = {
+                  lines: sourceLines.slice(start - 1, end).map((text, index) => ({
+                    number: start + index,
+                    text
+                  }))
+                };
+              } else {
+                const response = await fetch(`/api/source?${query}`, {cache: "no-store"});
+                if (!response.ok) {
+                  const message = await response.text();
+                  throw new Error(message || `Source request failed with status ${response.status}`);
+                }
+                result = await response.json();
+              }
+              const lineNumbers = document.createElement("pre");
+              lineNumbers.className = "source-line-numbers";
+              lineNumbers.textContent = result.lines.map(line => line.number).join("\n");
+              const code = document.createElement("code");
+              code.className = "hljs";
+              code.innerHTML = highlightSourceCode(
+                reference.path,
+                result.lines.map(line => line.text).join("\n")
+              );
+              const pre = document.createElement("pre");
+              pre.className = "source-code";
+              pre.append(code);
+              const codeContainer = document.createElement("div");
+              codeContainer.className = "source-code-container";
+              codeContainer.append(lineNumbers, pre);
+              sourceStatus.replaceWith(codeContainer);
+              file.dataset.loaded = "true";
+            } catch (error) {
+              sourceStatus.textContent = error instanceof TypeError
+                ? window.location.protocol === "file:" && !Object.hasOwn(embeddedSources, reference.path)
+                  ? "Open this graph with --web or --server to load source files."
+                  : `Could not reach CodeMap at ${window.location.origin}. Make sure the server is running.`
+                : error.message || "Could not load this source file.";
+            } finally {
+              delete file.dataset.loading;
+            }
+          });
+          sourceFileList.append(file);
+        }
+        content.replaceChildren(sourceFileList);
+      };
+      for (const tabName of ["code", "summary"]) {
+        const button = document.createElement("button");
+        button.className = "node-panel-tab";
+        button.type = "button";
+        button.setAttribute("role", "tab");
+        button.dataset.tab = tabName;
+        button.textContent = tabName === "summary" ? "Summary" : "Code";
+        button.addEventListener("click", () => setActiveTab(tabName));
+        tabs.append(button);
+        tabButtons.push(button);
+      }
+      setActiveTab("code");
+      panel.append(heading, tabs, content);
+      pageHeader.replaceChildren(panel);
+      closeButton.focus();
+    };
     uploadCodeButton.addEventListener("click", () => uploadDialog.showModal());
     const updateUploadButton = () => {
       const source = uploadSource.value.trim();
@@ -585,6 +1164,32 @@
       modelMenu.hidden = true;
       modelSelect.setAttribute("aria-expanded", "false");
     };
+    const positionModelMenu = () => {
+      if (modelMenu.hidden) return;
+
+      const bounds = modelSelect.getBoundingClientRect();
+      const viewportHeight = document.documentElement.clientHeight;
+      const edgeGap = 8;
+      const anchorGap = 6;
+      const aboveSpace = Math.max(0, bounds.top - anchorGap - edgeGap);
+      const belowSpace = Math.max(0, viewportHeight - bounds.bottom - anchorGap - edgeGap);
+      modelMenu.style.maxHeight = "";
+      const naturalHeight = modelMenu.getBoundingClientRect().height;
+      const placeAbove = aboveSpace >= naturalHeight || aboveSpace >= belowSpace;
+      const availableHeight = placeAbove ? aboveSpace : belowSpace;
+
+      modelMenu.style.maxHeight = `${availableHeight}px`;
+      const menuBounds = modelMenu.getBoundingClientRect();
+      const top = placeAbove
+        ? bounds.top - anchorGap - menuBounds.height
+        : bounds.bottom + anchorGap;
+      const left = Math.max(
+        edgeGap,
+        Math.min(bounds.left, document.documentElement.clientWidth - menuBounds.width - edgeGap)
+      );
+      modelMenu.style.top = `${Math.max(edgeGap, top)}px`;
+      modelMenu.style.left = `${left}px`;
+    };
     const renderModels = () => {
       const query = modelSearch.value.trim().toLocaleLowerCase();
       const filtered = availableModels.filter(model =>
@@ -638,10 +1243,16 @@
       modelSelect.setAttribute("aria-expanded", String(!modelMenu.hidden));
       if (!modelMenu.hidden) {
         renderModels();
+        positionModelMenu();
         modelSearch.focus();
       }
     });
-    modelSearch.addEventListener("input", renderModels);
+    modelSearch.addEventListener("input", () => {
+      renderModels();
+      positionModelMenu();
+    });
+    window.addEventListener("resize", positionModelMenu);
+    window.addEventListener("scroll", positionModelMenu, true);
     modelMenu.addEventListener("keydown", event => {
       if (event.key === "Escape") {
         closeModelMenu();
@@ -652,7 +1263,11 @@
       if (!modelPicker.contains(event.target)) closeModelMenu();
     });
     const setAuthStatus = status => {
-      apiStatus.textContent = status === "user" ? "signed in" : status;
+      apiStatus.textContent = status === "user"
+        ? "signed in"
+        : status === "default"
+          ? "default (free models)"
+          : status;
       authButton.textContent = status === "user" ? "Log out" : "Auth via OpenRouter";
       authButton.dataset.action = status === "user" ? "logout" : "login";
     };
@@ -742,18 +1357,95 @@
       authButton.disabled = true;
       apiStatus.textContent = "unavailable";
       modelSelect.textContent = "Use --web mode";
+      modelSelect.classList.add("web-mode-notice");
     }
 
     const graph = JSON.parse(document.getElementById("graph-data").textContent);
+    const embeddedSources = JSON.parse(document.getElementById("source-data").textContent);
     const svg = document.getElementById("graph-svg");
+    const main = document.querySelector("main");
     const canvas = document.querySelector(".canvas");
+    const resizeHandle = document.getElementById("sidebar-resize-handle");
+    const narrowLayout = window.matchMedia("(max-width: 860px)");
+    let resizePointerId = null;
+    let resizeStartCoordinate = 0;
+    let resizeStartSize = 0;
+    const updateResizeHandle = () => {
+      const vertical = narrowLayout.matches;
+      const mainStyles = getComputedStyle(main);
+      const beforePadding = Number.parseFloat(vertical ? mainStyles.paddingTop : mainStyles.paddingLeft);
+      const afterPadding = Number.parseFloat(vertical ? mainStyles.paddingBottom : mainStyles.paddingRight);
+      const available = (vertical ? main.clientHeight : main.clientWidth) -
+        beforePadding - afterPadding - 24;
+      const minimum = vertical ? 180 : 220;
+      const maximum = Math.max(minimum, available - minimum);
+      const current = pageHeader.getBoundingClientRect()[vertical ? "height" : "width"];
+      resizeHandle.setAttribute("aria-orientation", vertical ? "horizontal" : "vertical");
+      resizeHandle.setAttribute("aria-valuemin", String(minimum));
+      resizeHandle.setAttribute("aria-valuemax", String(Math.round(maximum)));
+      resizeHandle.setAttribute("aria-valuenow", String(Math.round(
+        Math.min(maximum, Math.max(minimum, current))
+      )));
+    };
+    const resizeSidebar = desired => {
+      const vertical = narrowLayout.matches;
+      const mainStyles = getComputedStyle(main);
+      const startPadding = Number.parseFloat(vertical ? mainStyles.paddingTop : mainStyles.paddingLeft);
+      const endPadding = Number.parseFloat(vertical ? mainStyles.paddingBottom : mainStyles.paddingRight);
+      const available = (vertical ? main.clientHeight : main.clientWidth) -
+        startPadding - endPadding - 24;
+      const minimum = vertical ? 180 : 220;
+      const maximum = Math.max(minimum, available - minimum);
+      const size = Math.min(maximum, Math.max(minimum, desired));
+      pageHeader.style.flexBasis = `${size}px`;
+      resizeHandle.setAttribute("aria-valuenow", String(Math.round(size)));
+    };
+    resizeHandle.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      resizePointerId = event.pointerId;
+      resizeStartCoordinate = narrowLayout.matches ? event.clientY : event.clientX;
+      resizeStartSize = pageHeader.getBoundingClientRect()[
+        narrowLayout.matches ? "height" : "width"
+      ];
+      resizeHandle.setPointerCapture(event.pointerId);
+    });
+    resizeHandle.addEventListener("pointermove", event => {
+      if (event.pointerId !== resizePointerId) return;
+      const coordinate = narrowLayout.matches ? event.clientY : event.clientX;
+      resizeSidebar(resizeStartSize + coordinate - resizeStartCoordinate);
+    });
+    const finishSidebarResize = event => {
+      if (event.pointerId !== resizePointerId) return;
+      resizePointerId = null;
+      if (resizeHandle.hasPointerCapture(event.pointerId)) {
+        resizeHandle.releasePointerCapture(event.pointerId);
+      }
+    };
+    resizeHandle.addEventListener("pointerup", finishSidebarResize);
+    resizeHandle.addEventListener("pointercancel", finishSidebarResize);
+    resizeHandle.addEventListener("lostpointercapture", finishSidebarResize);
+    resizeHandle.addEventListener("keydown", event => {
+      const vertical = narrowLayout.matches;
+      const decrement = vertical ? "ArrowUp" : "ArrowLeft";
+      const increment = vertical ? "ArrowDown" : "ArrowRight";
+      if (event.key !== decrement && event.key !== increment) return;
+      event.preventDefault();
+      const current = pageHeader.getBoundingClientRect()[vertical ? "height" : "width"];
+      const step = event.shiftKey ? 40 : 10;
+      resizeSidebar(current + (event.key === increment ? step : -step));
+    });
+    window.addEventListener("resize", updateResizeHandle);
+    narrowLayout.addEventListener("change", updateResizeHandle);
+    updateResizeHandle();
     let resizeGraphViewport = null;
     let resetGraphView = null;
     window.addEventListener("keydown", event => {
       const target = event.target;
       if (event.code !== "Space" || event.repeat ||
         target instanceof HTMLElement &&
-        (target.isContentEditable || target.matches("input, textarea, select, button"))) {
+        (target.isContentEditable || target.matches("input, textarea, select, button")) ||
+        target instanceof SVGElement && target.closest(".node-action")) {
         return;
       }
       event.preventDefault();
@@ -852,7 +1544,6 @@
 
     const renderGraph = graph => {
     svg.replaceChildren();
-    const graphDetails = document.getElementById("graph-details");
     graphDetails.replaceChildren();
     if (graph.name) {
       const title = document.createElement("h1");
@@ -967,17 +1658,30 @@
     }));
     definitions.append(arrow);
     const edgeLayer = makeSvgElement("g", {class: "edges"});
+    const edgeLabelLayer = makeSvgElement("g", {class: "edge-labels"});
     const nodeLayer = makeSvgElement("g", {class: "nodes"});
-    svg.append(edgeLayer, nodeLayer);
+    svg.append(edgeLayer, edgeLabelLayer, nodeLayer);
 
     const nodesById = new Map(graph.nodes.map((node, index) => [node.id, {node, index}]));
+    const edgeKeys = new Set(graph.edges.map(edge => `${edge.from}\u0000${edge.to}`));
     const edgeData = new Float64Array(graph.edges.flatMap(edge => {
       const from = nodesById.get(edge.from);
       const to = nodesById.get(edge.to);
       if (!from || !to) {
         throw new Error(`Graph edge references an unknown node: ${edge.from} -> ${edge.to}`);
       }
-      return [from.index, to.index];
+      let sourcePort = 2;
+      let destinationPort = 1;
+      if (from.index !== to.index && edgeKeys.has(`${edge.to}\u0000${edge.from}`)) {
+        const fromCenterX = from.node.x + from.node.width / 2;
+        const toCenterX = to.node.x + to.node.width / 2;
+        const useRightSide = fromCenterX === toCenterX
+          ? from.index < to.index
+          : fromCenterX < toCenterX;
+        sourcePort = useRightSide ? 4 : 3;
+        destinationPort = useRightSide ? 3 : 4;
+      }
+      return [from.index, to.index, sourcePort, destinationPort];
     }));
     const maxRoutePoints = graph.nodes.length * 4 + 16;
     const outputCapacity = Math.max(1, graph.edges.length * (1 + maxRoutePoints * 2));
@@ -1025,29 +1729,101 @@
       }
     };
 
-    const midpointOfRoute = points => {
+    const midpointOfSegmentAtRouteFraction = (points, fraction) => {
       const lengths = points.slice(1).map((point, index) =>
         Math.hypot(point.x - points[index].x, point.y - points[index].y)
       );
-      const halfLength = lengths.reduce((total, length) => total + length, 0) / 2;
+      const targetLength = lengths.reduce((total, length) => total + length, 0) * fraction;
       let traversed = 0;
       for (let index = 0; index < lengths.length; index++) {
         const length = lengths[index];
-        if (traversed + length >= halfLength) {
-          const fraction = length === 0 ? 0 : (halfLength - traversed) / length;
+        if (length > 0 && traversed + length >= targetLength) {
           return {
-            x: points[index].x + (points[index + 1].x - points[index].x) * fraction,
-            y: points[index].y + (points[index + 1].y - points[index].y) * fraction
+            x: (points[index].x + points[index + 1].x) / 2,
+            y: (points[index].y + points[index + 1].y) / 2,
+            horizontal: points[index].y === points[index + 1].y,
+            segmentIndex: index
           };
         }
         traversed += length;
       }
-      return points[0];
+      return midpointOfSegment(points, Math.max(0, points.length - 2));
+    };
+
+    const midpointOfSegment = (points, index) => ({
+      x: (points[index].x + points[index + 1].x) / 2,
+      y: (points[index].y + points[index + 1].y) / 2,
+      horizontal: points[index].y === points[index + 1].y,
+      segmentIndex: index
+    });
+
+    const positionLabel = (labelText, position) => {
+      labelText.setAttribute("x", position.x);
+      labelText.setAttribute("y", position.horizontal ? position.y : position.y - 5);
+      let textBounds = labelText.getBBox();
+      if (position.horizontal) {
+        const textCenterY = textBounds.y + textBounds.height / 2;
+        labelText.setAttribute(
+          "y",
+          Number(labelText.getAttribute("y")) + position.y - textCenterY
+        );
+        textBounds = labelText.getBBox();
+      }
+      return {
+        x: textBounds.x - 4,
+        y: textBounds.y - 2,
+        width: textBounds.width + 8,
+        height: textBounds.height + 4
+      };
+    };
+
+    const overlapArea = (first, second) => {
+      const width = Math.max(
+        0,
+        Math.min(first.x + first.width, second.x + second.width) - Math.max(first.x, second.x)
+      );
+      const height = Math.max(
+        0,
+        Math.min(first.y + first.height, second.y + second.height) - Math.max(first.y, second.y)
+      );
+      return width * height;
+    };
+
+    const roundedRoutePath = (points, radius = 12) => {
+      if (points.length < 3) {
+        return points.map((point, index) =>
+          `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`
+        ).join(" ");
+      }
+
+      let path = `M ${points[0].x} ${points[0].y}`;
+      for (let index = 1; index < points.length - 1; index++) {
+        const previous = points[index - 1];
+        const corner = points[index];
+        const next = points[index + 1];
+        const incomingLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+        const outgoingLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+        if (incomingLength === 0 || outgoingLength === 0) continue;
+
+        const trim = Math.min(radius, incomingLength / 2, outgoingLength / 2);
+        const before = {
+          x: corner.x + (previous.x - corner.x) * (trim / incomingLength),
+          y: corner.y + (previous.y - corner.y) * (trim / incomingLength)
+        };
+        const after = {
+          x: corner.x + (next.x - corner.x) * (trim / outgoingLength),
+          y: corner.y + (next.y - corner.y) * (trim / outgoingLength)
+        };
+        path += ` L ${before.x} ${before.y} Q ${corner.x} ${corner.y} ${after.x} ${after.y}`;
+      }
+
+      const last = points[points.length - 1];
+      return `${path} L ${last.x} ${last.y}`;
     };
 
     const isInsideNode = (point, node) =>
-      point.x > node.x && point.x < node.x + node.width &&
-      point.y > node.y && point.y < node.y + node.height;
+      point.x >= node.x && point.x <= node.x + node.width &&
+      point.y >= node.y && point.y <= node.y + node.height;
 
     const intersectNodeBoundary = (inside, outside, node) => {
       const dx = outside.x - inside.x;
@@ -1078,7 +1854,22 @@
           ];
         }
       }
-      throw new Error("Edge route never exits its node");
+      return points;
+    };
+
+    const selfLoopRoute = node => {
+      const clearance = 24;
+      const centerX = node.x + node.width / 2;
+      const centerY = node.y + node.height / 2;
+      const outerX = node.x + node.width + clearance;
+      const outerY = node.y - clearance;
+      return [
+        {x: node.x + node.width, y: centerY},
+        {x: outerX, y: centerY},
+        {x: outerX, y: outerY},
+        {x: centerX, y: outerY},
+        {x: centerX, y: node.y}
+      ];
     };
 
     const edgeElements = graph.edges.map(edge => {
@@ -1090,15 +1881,26 @@
       edgeLayer.append(path);
 
       let label = null;
+      let labelText = null;
+      let labelBackground = null;
       if (edge.label) {
-        label = makeSvgElement("text", {
+        label = makeSvgElement("g", {
           class: "edge-label",
-          "text-anchor": "middle"
+          "pointer-events": "none"
         });
-        label.textContent = edge.label;
-        edgeLayer.append(label);
+        labelBackground = makeSvgElement("rect", {
+          fill: "var(--page-bg)",
+          stroke: "#fff",
+          "stroke-width": "1",
+          rx: "4",
+          ry: "4"
+        });
+        labelText = makeSvgElement("text", {"text-anchor": "middle"});
+        labelText.textContent = edge.label;
+        label.append(labelBackground, labelText);
+        edgeLabelLayer.append(label);
       }
-      return {path, label};
+      return {path, label, labelText, labelBackground};
     });
 
     const dragRouteDelayFactor = 6;
@@ -1139,21 +1941,65 @@
 
       const startedAt = performance.now();
       const routes = computeRoutes();
+      const occupiedBounds = graph.nodes.map(node => ({
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height
+      }));
       routes.forEach((points, index) => {
         const edge = graph.edges[index];
         const from = nodesById.get(edge.from).node;
         const to = nodesById.get(edge.to).node;
-        const clippedPoints = clipRouteAtNode(points, from);
-        const visiblePoints = clipRouteAtNode(clippedPoints.slice().reverse(), to).reverse();
-        const {path, label} = edgeElements[index];
-        const pathData = visiblePoints.map((point, pointIndex) =>
-          `${pointIndex === 0 ? "M" : "L"} ${point.x} ${point.y}`
-        ).join(" ");
-        path.setAttribute("d", pathData);
-        if (label) {
-          const midpoint = midpointOfRoute(visiblePoints);
-          label.setAttribute("x", midpoint.x);
-          label.setAttribute("y", midpoint.y - 5);
+        let visiblePoints;
+        if (edge.from === edge.to) {
+          visiblePoints = selfLoopRoute(from);
+        } else {
+          const clippedPoints = clipRouteAtNode(points, from);
+          visiblePoints = clipRouteAtNode(clippedPoints.slice().reverse(), to).reverse();
+        }
+        const {path, labelText, labelBackground} = edgeElements[index];
+        path.setAttribute("d", roundedRoutePath(visiblePoints));
+        if (labelText && labelBackground) {
+          const labelFraction = edge.arrow_start !== edge.arrow_end ? 3 / 4 : 1 / 2;
+          const initialPosition = midpointOfSegmentAtRouteFraction(visiblePoints, labelFraction);
+          const segmentIndices = [
+            initialPosition.segmentIndex,
+            initialPosition.segmentIndex + 1,
+            initialPosition.segmentIndex - 1
+          ].filter(segmentIndex => {
+            if (segmentIndex < 0 || segmentIndex >= visiblePoints.length - 1) return false;
+            const start = visiblePoints[segmentIndex];
+            const end = visiblePoints[segmentIndex + 1];
+            return start.x !== end.x || start.y !== end.y;
+          });
+          let selectedPosition = null;
+          let selectedBounds = null;
+          let leastOverlap = Infinity;
+          for (const [candidateIndex, segmentIndex] of segmentIndices.entries()) {
+            const position = candidateIndex === 0
+              ? initialPosition
+              : midpointOfSegment(visiblePoints, segmentIndex);
+            const bounds = positionLabel(labelText, position);
+            const overlap = occupiedBounds.reduce(
+              (total, previous) => total + overlapArea(bounds, previous),
+              0
+            );
+            if (overlap < leastOverlap) {
+              selectedPosition = position;
+              selectedBounds = bounds;
+              leastOverlap = overlap;
+            }
+            if (overlap === 0) break;
+          }
+          if (selectedPosition && selectedBounds) {
+            positionLabel(labelText, selectedPosition);
+            labelBackground.setAttribute("x", selectedBounds.x);
+            labelBackground.setAttribute("y", selectedBounds.y);
+            labelBackground.setAttribute("width", selectedBounds.width);
+            labelBackground.setAttribute("height", selectedBounds.height);
+            occupiedBounds.push(selectedBounds);
+          }
         }
       });
       edgeLayer.style.visibility = "visible";
@@ -1181,72 +2027,161 @@
     const wrapText = (text, maxChars, maxLines) => {
       const lines = [];
       let current = "";
+      let truncated = false;
       for (const word of text.split(/\s+/).filter(Boolean)) {
         if (current && current.length + 1 + word.length > maxChars) {
           lines.push(current);
-          if (lines.length === maxLines) break;
+          if (lines.length === maxLines) {
+            truncated = true;
+            break;
+          }
           current = "";
         }
         current += `${current ? " " : ""}${word}`;
       }
       if (current && lines.length < maxLines) lines.push(current);
       if (!lines.length) lines.push("");
-      if (lines.length === maxLines && text.length > lines.join("").length) {
-        lines[lines.length - 1] += "...";
-      }
+      if (truncated) lines[lines.length - 1] += "...";
       return lines;
     };
 
-    const appendTextLines = (group, className, text, x, y, lineHeight) => {
-      wrapText(text, 24, 3).forEach((line, index) => {
-        const textElement = makeSvgElement("text", {
-          class: className,
-          x,
-          y: y + index * lineHeight,
-          "text-anchor": "middle"
-        });
-        textElement.textContent = line;
-        group.append(textElement);
-      });
-    };
+    const nodeTitleRowHeight = 33;
+    const nodeDescriptionLineHeight = 12;
+    const nodeDescriptionLineCount = 6;
+    const nodeActionRowHeight = 26;
+    const nodeBaseHeight = nodeTitleRowHeight +
+      nodeDescriptionLineHeight * nodeDescriptionLineCount +
+      nodeActionRowHeight;
 
     for (const node of graph.nodes) {
       const group = makeSvgElement("g", {class: "node"});
       group.setAttribute("transform", `translate(${node.x} ${node.y})`);
-      group.append(makeSvgElement("rect", {
+      const background = makeSvgElement("rect", {
         x: 0,
         y: 0,
         width: node.width,
         height: node.height,
         rx: 12,
         ry: 12
-      }));
+      });
+      group.append(background);
       const title = node.name || "";
       const description = node.description || "";
+      const titleElement = makeSvgElement("text", {
+        class: "node-title",
+        x: node.width / 2,
+        y: 0,
+        "text-anchor": "middle"
+      });
+      const descriptionLayer = makeSvgElement("g");
+      const actionDivider = makeSvgElement("line", {
+        class: "node-action-divider",
+        stroke: "var(--line-color)",
+        "stroke-width": "1"
+      });
+      const buttonDivider = makeSvgElement("line", {
+        class: "node-action-divider",
+        stroke: "var(--line-color)",
+        "stroke-width": "1"
+      });
+      const makeNodeAction = (className, label, action) => {
+        const control = makeSvgElement("g", {
+          class: `node-action ${className}`,
+          role: "button",
+          tabindex: "0",
+          "aria-label": label
+        });
+        const rect = makeSvgElement("rect", {rx: "3", ry: "3"});
+        const text = makeSvgElement("text", {
+          "text-anchor": "middle"
+        });
+        text.textContent = className === "node-expand" ? "expand" : "move";
+        control.append(rect, text);
+        control.addEventListener("click", event => {
+          event.stopPropagation();
+          action();
+        });
+        control.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            action();
+          }
+        });
+        return {control, rect, text};
+      };
+      const expandAction = makeNodeAction(
+        "node-expand",
+        "Open node details",
+        () => showNodePanel(node)
+      );
+      const moveAction = makeNodeAction("node-move", "Move node by dragging", () => {});
 
-      if (title) {
-        appendTextLines(group, "node-title", title, node.width / 2, 32, 18);
-      }
-      if (description) {
-        const titleLines = wrapText(title, 24, 2).length;
-        const descriptionY = title
-          ? 42 + titleLines * 17
-          : 50;
-        appendTextLines(
-          group,
-          "node-description",
-          description,
-          node.width / 2,
-          descriptionY,
-          15
+      const updateNodeLayout = () => {
+        const descriptionLines = description
+          ? wrapText(description, 24, nodeDescriptionLineCount)
+          : [];
+        node.height = nodeBaseHeight;
+        background.setAttribute("height", node.height);
+        titleElement.textContent = wrapText(title, 24, 1)[0];
+        const titleBounds = titleElement.getBBox();
+        titleElement.setAttribute(
+          "y",
+          nodeTitleRowHeight / 2 - (titleBounds.y + titleBounds.height / 2)
         );
-      }
+        descriptionLayer.replaceChildren();
+        const descriptionAreaHeight = node.height - nodeTitleRowHeight - nodeActionRowHeight;
+        const descriptionTextHeight = descriptionLines.length * nodeDescriptionLineHeight;
+        const descriptionFirstLineY = nodeTitleRowHeight +
+          (descriptionAreaHeight - descriptionTextHeight) / 2 + 10;
+        descriptionLines.forEach((line, index) => {
+          const text = makeSvgElement("text", {
+            class: "node-description",
+            x: node.width / 2,
+            y: descriptionFirstLineY + index * nodeDescriptionLineHeight,
+            "text-anchor": "middle"
+          });
+          text.textContent = line;
+          descriptionLayer.append(text);
+        });
+
+        const actionTop = node.height - nodeActionRowHeight;
+        actionDivider.setAttribute("x1", "1");
+        actionDivider.setAttribute("x2", node.width - 1);
+        actionDivider.setAttribute("y1", actionTop);
+        actionDivider.setAttribute("y2", actionTop);
+        buttonDivider.setAttribute("x1", node.width / 2);
+        buttonDivider.setAttribute("x2", node.width / 2);
+        buttonDivider.setAttribute("y1", actionTop);
+        buttonDivider.setAttribute("y2", node.height - 1);
+        for (const [button, left, width] of [
+          [expandAction, 1, node.width / 2 - 1],
+          [moveAction, node.width / 2, node.width / 2 - 1]
+        ]) {
+          button.rect.setAttribute("x", left);
+          button.rect.setAttribute("y", actionTop + 1);
+          button.rect.setAttribute("width", width);
+          button.rect.setAttribute("height", nodeActionRowHeight - 2);
+          button.text.setAttribute("x", left + width / 2);
+          button.text.setAttribute("y", actionTop + 17);
+        }
+      };
+      group.append(
+        titleElement,
+        descriptionLayer,
+        actionDivider,
+        buttonDivider,
+        expandAction.control,
+        moveAction.control
+      );
       nodeLayer.append(group);
+      updateNodeLayout();
 
       let drag = null;
-      group.addEventListener("pointerdown", event => {
+      moveAction.control.addEventListener("pointerdown", event => {
         if (event.button !== 0) return;
         event.preventDefault();
+        event.stopPropagation();
         const bounds = svg.getBoundingClientRect();
         drag = {
           pointerId: event.pointerId,
@@ -1274,6 +2209,21 @@
         group.setAttribute("transform", `translate(${node.x} ${node.y})`);
         updateSvgViewport();
         updateEdgeRoutes({drag});
+      });
+      moveAction.control.addEventListener("keydown", event => {
+        const movement = {
+          ArrowUp: [0, -10],
+          ArrowDown: [0, 10],
+          ArrowLeft: [-10, 0],
+          ArrowRight: [10, 0]
+        }[event.key];
+        if (!movement) return;
+        event.preventDefault();
+        node.x += movement[0];
+        node.y += movement[1];
+        group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+        updateSvgViewport();
+        updateEdgeRoutes({force: true});
       });
 
       const finishDragging = event => {

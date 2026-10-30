@@ -13,7 +13,24 @@ use std::time::{Duration, Instant};
 use crate::step::{ChatClient, Message};
 
 const OPENROUTER_CHAT_COMPLETIONS_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(3600);
+
+pub fn list_model_ids() -> Result<Vec<String>, reqwest::Error> {
+    let response = Client::new()
+        .get(OPENROUTER_MODELS_URL)
+        .timeout(Duration::from_secs(30))
+        .send()?
+        .error_for_status()?;
+    let catalog: ModelCatalog = response.json()?;
+    let mut model_ids = catalog
+        .data
+        .into_iter()
+        .map(|model| model.id)
+        .collect::<Vec<_>>();
+    model_ids.sort();
+    Ok(model_ids)
+}
 
 pub struct OpenRouter {
     client: Client,
@@ -167,6 +184,16 @@ struct ChatCompletionRequest<'a> {
 #[derive(Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<ChatCompletionChoice>,
+}
+
+#[derive(Deserialize)]
+struct ModelCatalog {
+    data: Vec<ModelEntry>,
+}
+
+#[derive(Deserialize)]
+struct ModelEntry {
+    id: String,
 }
 
 #[derive(Deserialize)]

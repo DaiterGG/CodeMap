@@ -3,20 +3,38 @@
 //! `--gr FILE` skips collection and LLM work and renders the supplied graph file.
 
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use hello_cli::llm::OpenRouter;
+use hello_cli::llm::{OpenRouter, list_model_ids};
 use hello_cli::step::{ChatClient, Message, StepStack};
 
 const DEFAULT_MODEL: &str = "liquid/lfm-2.5-2.6b:free";
 const DEFAULT_PATH: &str = "examples/small_repo";
 const MAX_RETRIES: usize = 3;
-const AVAILABLE_MODELS: &[&str] = &[
-    "liquid/lfm-2.5-2.6b:free",
-    "inception/mercury-decide:free",
-    "xingchen-agi/xing4.0-29b-a4b:free",
-];
+
+fn call_with_retries(
+    steps: &mut StepStack,
+    llm: &dyn ChatClient,
+    input: Vec<Message>,
+) -> Result<hello_cli::step::StepId, String> {
+    let mut retries = 0;
+    loop {
+        match steps.call(llm, input.clone()) {
+            Ok(step_id) => return Ok(step_id),
+            Err(error) => {
+                if retries == MAX_RETRIES {
+                    return Err(format!(
+                        "model request failed after {MAX_RETRIES} retries: {error}"
+                    ));
+                }
+                eprintln!("retry: model request failed: {error}");
+                retries += 1;
+            }
+        }
+    }
+}
 
 const USAGE: &str = "Usage: hello-cli [OPTIONS]
 
@@ -27,15 +45,14 @@ Options:
       --test       Use hyperqwen/qwen3.8-27b with TEST_TOKEN
       --web        Host the web page on localhost and open it in a browser
       --server     Serve the web page on all interfaces at port 36800
+      --models     List all OpenRouter model IDs
+      --prompt     Write the initial model request to prompt.txt
       --gr FILE    Render a custom graph file as HTML and open it in a browser
       --no-readme  Exclude files named README (case-insensitive, any extension)
       --no-md      Exclude Markdown files (.md and .markdown)
       --non-txt    Include non-text files as base64-encoded content
       --no-browser  Write the response page without opening a browser
-      --model ID    Select a model:
-                      liquid/lfm-2.5-2.6b:free (default)
-                      inception/mercury-decide:free
-                      xingchen-agi/xing4.0-29b-a4b:free
+      --model ID   OpenRouter model ID (default: liquid/lfm-2.5-2.6b:free)
   -h, --help       Print help
   -V, --version    Print version";
 
@@ -45,8 +62,10 @@ fn main() {
     let mut graph_path = None;
     let mut web_mode = false;
     let mut server_mode = false;
+    let mut models_mode = false;
+    let mut write_prompt = false;
     let mut test_mode = false;
-    let mut model = DEFAULT_MODEL;
+    let mut model = DEFAULT_MODEL.to_owned();
     let mut model_provided = false;
     let mut open_browser = true;
     let mut exclude_readme = false;
@@ -58,6 +77,8 @@ fn main() {
             "--no-browser" => open_browser = false,
             "--web" => web_mode = true,
             "--server" => server_mode = true,
+            "--models" => models_mode = true,
+            "--prompt" => write_prompt = true,
             "--test" => test_mode = true,
             "--no-readme" => exclude_readme = true,
             "--no-md" => exclude_markdown = true,
@@ -89,18 +110,15 @@ fn main() {
                     eprintln!("error: --model requires a model ID\n\n{USAGE}");
                     process::exit(2);
                 };
-                if !AVAILABLE_MODELS.contains(&selected.as_str()) {
-                    eprintln!(
-                        "error: unsupported model '{selected}'. Choose one of: {}\n\n{USAGE}",
-                        AVAILABLE_MODELS.join(", ")
-                    );
+                if selected.trim().is_empty() || selected.starts_with('-') {
+                    eprintln!("error: --model requires a valid model ID\n\n{USAGE}");
                     process::exit(2);
                 }
-                model = AVAILABLE_MODELS
-                    .iter()
-                    .copied()
-                    .find(|available| *available == selected)
-                    .expect("selected model was checked against available models");
+                if model_provided {
+                    eprintln!("error: only one model may be provided\n\n{USAGE}");
+                    process::exit(2);
+                }
+                model = selected;
                 model_provided = true;
             }
             "-h" | "--help" => {
@@ -131,6 +149,25 @@ fn main() {
         process::exit(2);
     }
 
+    if models_mode
+        && (web_mode
+            || server_mode
+            || test_mode
+            || model_provided
+            || graph_path.is_some()
+            || path_provided)
+    {
+        eprintln!(
+            "error: --models cannot be combined with --web, --server, --test, --model, --gr, or a path\n\n{USAGE}"
+        );
+        process::exit(2);
+    }
+
+    if model_provided && (web_mode || server_mode) {
+        eprintln!("error: --model cannot be used with --web or --server\n\n{USAGE}");
+        process::exit(2);
+    }
+
     if test_mode && model_provided {
         eprintln!("error: --test selects its own model and cannot be used with --model\n\n{USAGE}");
         process::exit(2);
@@ -139,6 +176,21 @@ fn main() {
     if test_mode && (web_mode || server_mode) {
         eprintln!("error: --test cannot be used with --web or --server\n\n{USAGE}");
         process::exit(2);
+    }
+
+    if models_mode {
+        match list_model_ids() {
+            Ok(model_ids) => {
+                for model_id in model_ids {
+                    println!("{model_id}");
+                }
+            }
+            Err(error) => {
+                eprintln!("error: could not fetch OpenRouter models: {error}");
+                process::exit(1);
+            }
+        }
+        return;
     }
 
     if server_mode {
@@ -213,17 +265,7 @@ fn main() {
     };
 
     let mut steps = StepStack::with_files(source_files);
-    let mut step_id = match steps.call(
-        llm.as_ref(),
-        vec![Message::user(hello_cli::prompts::nodegraph())],
-    ) {
-        Ok(step_id) => step_id,
-        Err(error) => {
-            eprintln!("error: {error}");
-            process::exit(1);
-        }
-    };
-
+    let initial_prompt = vec![Message::user(hello_cli::prompts::nodegraph())];
     let output_dir = match hello_cli::page::create_response_history_dir() {
         Ok(path) => path,
         Err(error) => {
@@ -231,6 +273,24 @@ fn main() {
             process::exit(1);
         }
     };
+    if write_prompt {
+        let mut messages = steps.context();
+        messages.extend(initial_prompt.iter().cloned());
+        let prompt_text = format_prompt_messages(&messages);
+        let prompt_path = output_dir.join("prompt.txt");
+        if let Err(error) = fs::write(&prompt_path, prompt_text) {
+            eprintln!("error: could not write {}: {error}", prompt_path.display());
+            process::exit(1);
+        }
+    }
+    let mut step_id = match call_with_retries(&mut steps, llm.as_ref(), initial_prompt) {
+        Ok(step_id) => step_id,
+        Err(error) => {
+            eprintln!("error: {error}");
+            process::exit(1);
+        }
+    };
+
     let mut validation_errors = Vec::new();
     let mut retries = 0;
     loop {
@@ -245,7 +305,8 @@ fn main() {
         }
 
         let output = &steps.step(step_id).unwrap().response.content;
-        let correction_prompt = match hello_cli::graph_parser::validate(output) {
+        let (correction_prompt, validation_error) = match hello_cli::graph_parser::validate(output)
+        {
             Ok(()) => break,
             Err(diagnostic) => {
                 let validation_error = format!(
@@ -253,7 +314,7 @@ fn main() {
                     diagnostic.kind,
                     diagnostic.correction_details()
                 );
-                *validation_errors.last_mut().unwrap() = Some(validation_error);
+                *validation_errors.last_mut().unwrap() = Some(validation_error.clone());
                 if let Err(error) = hello_cli::page::write_response_history_snapshot(
                     &output_dir,
                     steps.steps(),
@@ -270,15 +331,22 @@ fn main() {
                         include_str!("../prompts/redundant_connection.txt")
                     }
                 };
-                format!("{prompt}\n\n{}", diagnostic.correction_details())
+                (
+                    format!("{prompt}\n\n{}", diagnostic.correction_details()),
+                    validation_error,
+                )
             }
         };
         if retries == MAX_RETRIES {
-            eprintln!("final fail");
+            eprintln!("final fail: {validation_error}");
             process::exit(1);
         }
-        println!("retry");
-        step_id = match steps.call(llm.as_ref(), vec![Message::user(correction_prompt)]) {
+        println!("retry: {validation_error}");
+        step_id = match call_with_retries(
+            &mut steps,
+            llm.as_ref(),
+            vec![Message::user(correction_prompt)],
+        ) {
             Ok(step_id) => step_id,
             Err(error) => {
                 eprintln!("error: {error}");
@@ -288,10 +356,11 @@ fn main() {
         retries += 1;
     }
 
-    let page_path = match hello_cli::page::finalize_response_history_page(
+    let page_path = match hello_cli::page::finalize_response_history_page_with_sources(
         &output_dir,
         steps.steps(),
         &validation_errors,
+        Some(&path),
     ) {
         Ok(path) => path,
         Err(error) => {
@@ -306,8 +375,80 @@ fn main() {
     }
 }
 
+fn format_prompt_messages(messages: &[Message]) -> String {
+    let mut output = String::new();
+    for message in messages {
+        let role = match message.role {
+            hello_cli::step::Role::System => "system",
+            hello_cli::step::Role::User => "user",
+            hello_cli::step::Role::Assistant => "assistant",
+        };
+        output.push_str(&format!("<{role}>\n{}\n</{role}>\n", message.content));
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{call_with_retries, format_prompt_messages};
+    use hello_cli::step::{ChatClient, Message, StepStack};
+    use std::cell::Cell;
+    use std::error::Error;
+
+    struct FailsThenSucceeds {
+        failures_left: Cell<usize>,
+    }
+
+    impl ChatClient for FailsThenSucceeds {
+        fn complete(&self, _messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>> {
+            let failures_left = self.failures_left.get();
+            if failures_left > 0 {
+                self.failures_left.set(failures_left - 1);
+                return Err("temporary model error".into());
+            }
+            Ok(Message::assistant("response"))
+        }
+    }
+
+    #[test]
+    fn retries_failed_model_calls_until_success() {
+        let llm = FailsThenSucceeds {
+            failures_left: Cell::new(1),
+        };
+        let mut steps = StepStack::new("system");
+
+        assert!(call_with_retries(&mut steps, &llm, vec![Message::user("prompt")]).is_ok());
+        assert_eq!(steps.steps().len(), 1);
+    }
+
+    #[test]
+    fn reports_the_model_error_after_exhausting_retries() {
+        let llm = FailsThenSucceeds {
+            failures_left: Cell::new(usize::MAX),
+        };
+        let mut steps = StepStack::new("system");
+
+        let error = call_with_retries(&mut steps, &llm, vec![Message::user("prompt")])
+            .expect_err("the model should keep failing");
+
+        assert!(error.contains("after 3 retries"));
+        assert!(error.contains("temporary model error"));
+        assert!(steps.steps().is_empty());
+    }
+
+    #[test]
+    fn prompt_transcript_keeps_message_text_and_roles() {
+        let messages = [
+            Message::system("source context\n"),
+            Message::user("Generate a graph."),
+        ];
+
+        assert_eq!(
+            format_prompt_messages(&messages),
+            "<system>\nsource context\n\n</system>\n<user>\nGenerate a graph.\n</user>\n"
+        );
+    }
+
     #[test]
     fn correction_prompts_are_distinct() {
         assert!(include_str!("../prompts/syntax_error.txt").contains("syntax"));

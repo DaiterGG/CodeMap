@@ -13,8 +13,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(not(target_os = "windows"))]
 use std::process::Stdio;
@@ -32,6 +33,7 @@ struct AppState {
     last_poll: Mutex<Instant>,
     auth: Mutex<AuthState>,
     generation: Mutex<GenerationState>,
+    source_access: Mutex<Option<SourceAccess>>,
     callback_url: String,
     server_mode: bool,
 }
@@ -63,6 +65,18 @@ struct PendingAuth {
     started_at: Instant,
 }
 
+struct GeneratedGraph {
+    graph: crate::graph_parser::Graph,
+    source: String,
+    history: Vec<crate::step::Step>,
+    validation_errors: Vec<Option<String>>,
+}
+
+struct SourceAccess {
+    root: PathBuf,
+    references: HashSet<crate::graph_parser::SourceReference>,
+}
+
 pub fn run() -> io::Result<()> {
     run_mode(false)
 }
@@ -90,12 +104,14 @@ async fn run_server(server_mode: bool) -> io::Result<()> {
         last_poll: Mutex::new(Instant::now()),
         auth: Mutex::new(AuthState::default()),
         generation: Mutex::new(GenerationState::default()),
+        source_access: Mutex::new(None),
         callback_url: format!("http://localhost:{}/api/auth/callback", address.port()),
         server_mode,
     });
     let app = Router::new()
         .route("/", get(index))
         .route("/api/poll", get(poll))
+        .route("/api/source", get(source))
         .route("/api/browse-folder", post(browse_folder))
         .route("/api/generate", post(generate))
         .route("/api/auth-status", get(auth_status))
@@ -149,6 +165,153 @@ struct GenerationPoll {
 #[derive(Deserialize)]
 struct PollQuery {
     after: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct SourceQuery {
+    path: String,
+    start: Option<usize>,
+    end: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceLine {
+    number: usize,
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceResponse {
+    path: String,
+    start: Option<usize>,
+    end: Option<usize>,
+    lines: Vec<SourceLine>,
+}
+
+async fn source(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SourceQuery>,
+) -> Result<Json<SourceResponse>, (StatusCode, String)> {
+    let reference = crate::graph_parser::SourceReference {
+        path: query.path.replace('\\', "/"),
+        start: query.start,
+        end: query.end,
+    };
+    if reference.start.is_some() != reference.end.is_some()
+        || reference.start.is_some_and(|start| start == 0)
+        || reference
+            .end
+            .zip(reference.start)
+            .is_some_and(|(end, start)| end < start)
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "source line range is invalid".to_owned(),
+        ));
+    }
+
+    let access = state
+        .source_access
+        .lock()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "source access state unavailable".to_owned(),
+            )
+        })?
+        .as_ref()
+        .map(|access| SourceAccess {
+            root: access.root.clone(),
+            references: access.references.clone(),
+        })
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "no generated source references are available".to_owned(),
+        ))?;
+    if !access.references.contains(&reference) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "source reference is not part of the current graph".to_owned(),
+        ));
+    }
+
+    let response =
+        tokio::task::spawn_blocking(move || read_source_reference(&access.root, reference))
+            .await
+            .map_err(|error| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("source read task failed: {error}"),
+                )
+            })?
+            .map_err(|error| match error.kind() {
+                io::ErrorKind::InvalidInput => (
+                    StatusCode::BAD_REQUEST,
+                    "source reference or line range is invalid".to_owned(),
+                ),
+                io::ErrorKind::NotFound => (
+                    StatusCode::NOT_FOUND,
+                    "source file is unavailable".to_owned(),
+                ),
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "could not read source file".to_owned(),
+                ),
+            })?;
+    Ok(Json(response))
+}
+
+fn read_source_reference(
+    root: &Path,
+    reference: crate::graph_parser::SourceReference,
+) -> io::Result<SourceResponse> {
+    let root = root.canonicalize()?;
+    let relative_path = Path::new(&reference.path);
+    if relative_path.is_absolute()
+        || relative_path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "source path must be relative to the project",
+        ));
+    }
+    let path = root.join(relative_path).canonicalize()?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "source file is outside the project or unavailable",
+        ));
+    }
+    let contents = std::fs::read_to_string(&path)?;
+    let lines = contents.lines().collect::<Vec<_>>();
+    let first = reference.start.unwrap_or(1);
+    let last = reference.end.unwrap_or(lines.len());
+    if reference.start.is_some() && (first > lines.len() || last > lines.len()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "source range is outside the file",
+        ));
+    }
+    let selected_lines = if first > last {
+        Vec::new()
+    } else {
+        lines[first - 1..last]
+            .iter()
+            .enumerate()
+            .map(|(index, text)| SourceLine {
+                number: first + index,
+                text: (*text).to_owned(),
+            })
+            .collect()
+    };
+    Ok(SourceResponse {
+        path: reference.path,
+        start: reference.start,
+        end: reference.end,
+        lines: selected_lines,
+    })
 }
 
 async fn poll(
@@ -344,19 +507,54 @@ async fn generate(
         }
         generation.id += 1;
         generation.status = GenerationStatus::Running;
+        *state.source_access.lock().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "source access state unavailable".to_owned(),
+            )
+        })? = None;
         generation.id
     };
     let task_state = Arc::clone(&state);
     tokio::task::spawn_blocking(move || {
         let result = generate_graph(&path, &model, user_key.as_deref())
-            .and_then(|graph| crate::page::serialize_positioned_graph(&graph))
-            .and_then(|json| serde_json::from_str(&json).map_err(io::Error::other))
+            .and_then(|generated| {
+                let json = crate::page::serialize_positioned_graph(&generated.graph)?;
+                let graph = serde_json::from_str(&json).map_err(io::Error::other)?;
+                let references = generated
+                    .graph
+                    .nodes
+                    .iter()
+                    .flat_map(|node| node.sources.iter().cloned())
+                    .collect();
+                crate::page::write_web_generation_files(
+                    &generated.graph,
+                    &generated.source,
+                    &generated.history,
+                    &generated.validation_errors,
+                )?;
+                Ok((
+                    graph,
+                    SourceAccess {
+                        root: path.clone(),
+                        references,
+                    },
+                ))
+            })
             .map_err(|error| error.to_string());
         if let Ok(mut generation) = task_state.generation.lock()
             && generation.id == id
         {
             generation.status = match result {
-                Ok(graph) => GenerationStatus::Ready(graph),
+                Ok((graph, access)) => match task_state.source_access.lock() {
+                    Ok(mut source_access) => {
+                        *source_access = Some(access);
+                        GenerationStatus::Ready(graph)
+                    }
+                    Err(_) => {
+                        GenerationStatus::Failed("source access state unavailable".to_owned())
+                    }
+                },
                 Err(error) => GenerationStatus::Failed(error),
             };
         }
@@ -371,7 +569,7 @@ fn generate_graph(
     path: &std::path::Path,
     model: &str,
     user_key: Option<&str>,
-) -> io::Result<crate::graph_parser::Graph> {
+) -> io::Result<GeneratedGraph> {
     let source_files = crate::files::read_directory_files(path)?;
     let api_key = match user_key {
         Some(key) => key.to_owned(),
@@ -388,19 +586,34 @@ fn generate_graph(
         )
         .map_err(io::Error::other)?;
     let mut retries = 0;
+    let mut validation_errors = Vec::new();
     loop {
         let output = &steps
             .step(step_id)
             .expect("the latest generation step exists")
             .response
             .content;
+        validation_errors.push(None);
         match crate::graph_parser::validate(output) {
             Ok(()) => {
-                return crate::graph_parser::parse(output).map_err(|diagnostic| {
+                let graph = crate::graph_parser::parse(output).map_err(|diagnostic| {
                     io::Error::new(io::ErrorKind::InvalidData, diagnostic.correction_details())
+                })?;
+                return Ok(GeneratedGraph {
+                    graph,
+                    source: output.to_owned(),
+                    history: steps.steps().to_vec(),
+                    validation_errors,
                 });
             }
             Err(diagnostic) => {
+                *validation_errors
+                    .last_mut()
+                    .expect("validation error entry was just added") = Some(format!(
+                    "Graph validation failed ({:?}):\n{}",
+                    diagnostic.kind,
+                    diagnostic.correction_details()
+                ));
                 if retries == MAX_RETRIES {
                     return Err(io::Error::other(format!(
                         "could not generate a valid graph after {MAX_RETRIES} corrections: {}",
@@ -808,9 +1021,10 @@ async fn stop_when_idle(state: Arc<AppState>) {
 mod tests {
     use super::{
         ApiModel, AppState, GenerationState, GenerationStatus, ModelArchitecture, ModelPricing,
-        PollQuery, code_challenge, is_url, poll,
+        PollQuery, SourceAccess, SourceQuery, code_challenge, is_url, poll, source,
     };
     use axum::extract::{Query, State};
+    use axum::http::StatusCode;
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
@@ -839,6 +1053,7 @@ mod tests {
                 id: 4,
                 status: GenerationStatus::Ready(graph.clone()),
             }),
+            source_access: Mutex::new(None),
             callback_url: String::new(),
             server_mode: false,
         });
@@ -856,6 +1071,86 @@ mod tests {
             .0;
         assert_eq!(repeated.status, "ready");
         assert_eq!(repeated.graph, None);
+    }
+
+    #[tokio::test]
+    async fn source_endpoint_serves_only_referenced_line_ranges() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("codemap-source-api-{unique}"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("main.rs"), "first\nsecond\nthird\n").unwrap();
+        let reference = crate::graph_parser::SourceReference {
+            path: "main.rs".to_owned(),
+            start: Some(2),
+            end: Some(3),
+        };
+        let full_reference = crate::graph_parser::SourceReference {
+            path: "main.rs".to_owned(),
+            start: None,
+            end: None,
+        };
+        let state = Arc::new(AppState {
+            last_poll: Mutex::new(Instant::now()),
+            auth: Mutex::new(super::AuthState::default()),
+            generation: Mutex::new(GenerationState::default()),
+            source_access: Mutex::new(Some(SourceAccess {
+                root: root.canonicalize().unwrap(),
+                references: [reference.clone(), full_reference.clone()]
+                    .into_iter()
+                    .collect(),
+            })),
+            callback_url: String::new(),
+            server_mode: false,
+        });
+
+        let response = source(
+            State(Arc::clone(&state)),
+            Query(SourceQuery {
+                path: reference.path,
+                start: reference.start,
+                end: reference.end,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(
+            response
+                .lines
+                .iter()
+                .map(|line| (line.number, line.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(2, "second"), (3, "third")]
+        );
+
+        let full_response = source(
+            State(Arc::clone(&state)),
+            Query(SourceQuery {
+                path: full_reference.path,
+                start: full_reference.start,
+                end: full_reference.end,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(full_response.lines.len(), 3);
+
+        let unauthorized = source(
+            State(state),
+            Query(SourceQuery {
+                path: "main.rs".to_owned(),
+                start: Some(1),
+                end: Some(3),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(unauthorized.0, StatusCode::NOT_FOUND);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
