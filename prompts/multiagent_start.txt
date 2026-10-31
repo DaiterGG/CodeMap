@@ -1,0 +1,7 @@
+Right now you are given a part of the repository, instead of generating full graph you have to create partial version of it.
+Files could appear out of order, with disconnected flow, you should reproduce that exactly.
+Connection that you cannot fully see: invocation of a code that you don't have in your context, can be represented with <partial> tag that contains line of code that invoke that connection
+
+Input["<name>Input</name><desc>Parse input</desc><source>src/main.cpp:full,src/processor.cpp:1-140</source>"] --> <partial>54 var res = Processor::start(parced, buff);</partial>
+
+these connections should be internal to the project (make an assumption), and will be used by another agent to connect parts of the graph together. Connection that are obviously external to the repository should not be marked as 'partial', but treated as complete representation and included in graph as regular nodes if necessary

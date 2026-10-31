@@ -1,13 +1,15 @@
 //! Parses and validates the program's custom graph syntax, reporting syntax and
 //! redundant-connection diagnostics used to request LLM corrections.
 
+use crate::files::SourceFile;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticKind {
     Syntax,
     RedundantConnection,
+    SourceReference,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,6 +105,68 @@ struct ParsedConnection {
 
 pub fn validate(output: &str) -> Result<(), GraphDiagnostic> {
     parse(output).map(|_| ())
+}
+
+pub fn validate_with_sources(
+    output: &str,
+    source_files: &[SourceFile],
+) -> Result<(), GraphDiagnostic> {
+    let graph = parse(output)?;
+    let source_line_counts = source_files
+        .iter()
+        .map(|file| (source_file_path(file), file.contents.lines().count()))
+        .collect::<HashMap<_, _>>();
+
+    for node in &graph.nodes {
+        let (line_number, line) = node_declaration_line(output, &node.id);
+        if node.sources.is_empty() {
+            return Err(diagnostic(
+                DiagnosticKind::SourceReference,
+                line_number,
+                line,
+                &format!("Node `{}` does not have a source reference.", node.id),
+                "Add a `<source>path:full</source>` or `<source>path:start-end</source>` tag that points to supporting code.",
+            ));
+        }
+
+        for reference in &node.sources {
+            let Some(line_count) = source_line_counts.get(&reference.path) else {
+                return Err(diagnostic(
+                    DiagnosticKind::SourceReference,
+                    line_number,
+                    line,
+                    &format!(
+                        "Node `{}` references `{}`, but that file is not present in the provided codebase.",
+                        node.id, reference.path
+                    ),
+                    "Use a path to a file present in the provided codebase.",
+                ));
+            };
+            if let Some(end) = reference.end
+                && end > *line_count
+            {
+                return Err(diagnostic(
+                    DiagnosticKind::SourceReference,
+                    line_number,
+                    line,
+                    &format!(
+                        "Node `{}` references lines {}-{} of `{}`, but the file has only {} lines.",
+                        node.id,
+                        reference.start.unwrap_or(1),
+                        end,
+                        reference.path,
+                        line_count
+                    ),
+                    &format!(
+                        "Choose an inclusive line range between 1 and {line_count}, or use `{}:full`.",
+                        reference.path
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
@@ -369,6 +433,36 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
         nodes,
         edges: graph_edges,
     })
+}
+
+fn source_file_path(file: &SourceFile) -> String {
+    let mut filename = file.name.clone();
+    if let Some(extension) = &file.extension {
+        filename.push('.');
+        filename.push_str(extension);
+    }
+    file.path
+        .join(filename)
+        .display()
+        .to_string()
+        .replace('\\', "/")
+}
+
+fn node_declaration_line<'a>(output: &'a str, node_id: &str) -> (usize, &'a str) {
+    output
+        .lines()
+        .enumerate()
+        .find_map(|(index, line)| {
+            let tokens = tokenize_line(line.trim()).ok()?;
+            tokens.into_iter().find_map(|token| match token {
+                Token::Node {
+                    id,
+                    declaration: Some(_),
+                } if id == node_id => Some((index + 1, line)),
+                _ => None,
+            })
+        })
+        .unwrap_or((1, output.lines().next().unwrap_or("")))
 }
 
 fn parse_graph_wrapper(
@@ -705,10 +799,20 @@ fn canonical_connection(from: &str, to: &str, operator: &str, label: &str) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     const NODE_DECLARATIONS: &str = r#"Alpha["<name>Alpha</name><desc>First node</desc>"]
 Beta["<name>Beta</name><desc>Second node</desc>"]
 "#;
+
+    fn source_file(path: &str, name: &str, extension: &str, contents: &str) -> SourceFile {
+        SourceFile {
+            path: PathBuf::from(path),
+            name: name.to_owned(),
+            extension: Some(extension.to_owned()),
+            contents: contents.to_owned(),
+        }
+    }
 
     fn wrap_graph(direction: &str, body: &str) -> String {
         format!(
@@ -866,6 +970,60 @@ Node["<name>Node</name><desc>Details</desc><source>src/main.rs:full,src/lib.rs:1
                 "accepted invalid source {source}"
             );
         }
+    }
+
+    #[test]
+    fn validates_source_paths_and_inclusive_line_ranges() {
+        let files = [source_file("src", "main", "rs", "one\ntwo\nthree\n")];
+        let graph = r#"<graph type="TD">
+Node["<name>Node</name><source>src/main.rs:2-3</source>"]
+</graph>"#;
+
+        assert_eq!(validate_with_sources(graph, &files), Ok(()));
+    }
+
+    #[test]
+    fn rejects_source_paths_not_present_in_the_provided_files() {
+        let graph = r#"<graph type="TD">
+Node["<name>Node</name><source>src/missing.rs:full</source>"]
+</graph>"#;
+
+        let error = validate_with_sources(graph, &[]).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::SourceReference);
+        assert_eq!(error.line_number, 2);
+        assert!(error.explanation.contains("src/missing.rs"));
+        assert!(error.expected.contains("provided codebase"));
+    }
+
+    #[test]
+    fn rejects_source_ranges_that_exceed_the_file_line_count() {
+        let files = [source_file("src", "main", "rs", "one\ntwo\nthree\n")];
+        let graph = r#"<graph type="TD">
+Node["<name>Node</name><source>src/main.rs:2-4</source>"]
+</graph>"#;
+
+        let error = validate_with_sources(graph, &files).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::SourceReference);
+        assert_eq!(error.line_number, 2);
+        assert!(error.explanation.contains("only 3 lines"));
+        assert!(error.expected.contains("between 1 and 3"));
+    }
+
+    #[test]
+    fn requires_each_node_to_have_a_source_reference() {
+        let files = [source_file("src", "main", "rs", "fn main() {}\n")];
+        let graph = r#"<graph type="TD">
+Node["<name>Node</name>"]
+</graph>"#;
+
+        let error = validate_with_sources(graph, &files).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::SourceReference);
+        assert_eq!(error.line_number, 2);
+        assert!(
+            error
+                .explanation
+                .contains("does not have a source reference")
+        );
     }
 
     #[test]

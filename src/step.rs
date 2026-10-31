@@ -7,6 +7,10 @@ use std::error::Error;
 
 pub trait ChatClient {
     fn complete(&self, messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>>;
+
+    fn context_length(&self) -> Option<usize> {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -130,6 +134,13 @@ impl StepStack {
 
     pub fn steps(&self) -> &[Step] {
         &self.steps
+    }
+
+    pub fn source_files(&self) -> Option<&[SourceFile]> {
+        match &self.system {
+            SystemContext::Files(files) => Some(files),
+            SystemContext::Text(_) => None,
+        }
     }
 }
 

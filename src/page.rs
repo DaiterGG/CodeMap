@@ -1,10 +1,10 @@
-//! Lays out validated graphs, exports their positioned JSON, and writes the
-//! browser page and response history. Mermaid source export lives separately.
+//! Serializes validated graphs and writes browser pages and response history.
+//! Mermaid source export lives separately.
 
 use crate::graph_parser::{Graph, GraphDirection};
 use crate::step::{Role, Step};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,17 +14,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const TEMPLATE: &str = include_str!("../public/index.html");
 const GRAPH_JSON_MARKER: &str = "{{GRAPH_JSON}}";
 const SOURCE_JSON_MARKER: &str = "{{SOURCE_JSON}}";
-const ROUTER_WASM_MARKER: &str = "{{ROUTER_WASM_BASE64}}";
+const ELK_JS_MARKER: &str = "{{ELK_JS}}";
+const ELK_LICENSE_MARKER: &str = "{{ELK_LICENSE}}";
 const GRAPH_DETAILS_MARKER: &str = "{{GRAPH_DETAILS}}";
 const SERVER_MODE_MARKER: &str = "{{SERVER_MODE}}";
 const HIGHLIGHT_JS_MARKER: &str = "{{HIGHLIGHT_JS}}";
 const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
 const NODE_WIDTH: f64 = 210.0;
 const NODE_HEIGHT: f64 = 131.0;
-const HORIZONTAL_GAP: f64 = 90.0;
-const VERTICAL_GAP: f64 = 80.0;
-const MARGIN: f64 = 48.0;
-const LANE_GAP: f64 = 72.0;
 
 pub fn write_response_page(thought: Option<&str>, response: &str) -> io::Result<PathBuf> {
     let output_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -34,9 +31,8 @@ pub fn write_response_page(thought: Option<&str>, response: &str) -> io::Result<
 }
 
 pub fn write_graph_page(graph: &Graph, graph_source: &str) -> io::Result<PathBuf> {
-    let graph_json = serialize_positioned_graph(graph)?;
-    let wasm_base64 = router_wasm_base64();
-    let html = render_page_html(graph, &graph_json, "{}", &wasm_base64, false);
+    let graph_json = serialize_graph_document(graph)?;
+    let html = render_page_html(graph, &graph_json, "{}", false);
     let generated_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("generated");
@@ -85,7 +81,7 @@ fn write_graph_artifacts(
     history: &[Step],
     validation_errors: &[Option<String>],
 ) -> io::Result<()> {
-    let graph_json = serialize_positioned_graph(graph)?;
+    let graph_json = serialize_graph_document(graph)?;
     fs::write(output_dir.join("graph.json"), graph_json)?;
     crate::mermaid::write_graph_file(output_dir, graph)?;
     crate::graph_file::write_graph_file(output_dir, graph_source)?;
@@ -124,10 +120,9 @@ pub fn finalize_response_history_page_with_sources(
         ));
     };
     let graph = crate::graph_file::parse_graph(&final_step.response.content)?;
-    let graph_json = serialize_positioned_graph(&graph)?;
+    let graph_json = serialize_graph_document(&graph)?;
     let source_json = serialize_embedded_sources(&graph, source_root)?;
-    let wasm_base64 = router_wasm_base64();
-    let html = render_page_html(&graph, &graph_json, &source_json, &wasm_base64, false);
+    let html = render_page_html(&graph, &graph_json, &source_json, false);
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
     fs::write(output_dir.join("graph.json"), &graph_json)?;
@@ -184,9 +179,8 @@ fn write_response_files(
     history: Option<&[Step]>,
 ) -> io::Result<PathBuf> {
     let graph = crate::graph_file::parse_graph(response)?;
-    let graph_json = serialize_positioned_graph(&graph)?;
-    let wasm_base64 = router_wasm_base64();
-    let html = render_page_html(&graph, &graph_json, "{}", &wasm_base64, false);
+    let graph_json = serialize_graph_document(&graph)?;
+    let html = render_page_html(&graph, &graph_json, "{}", false);
     let raw_graph = crate::graph_file::normalize_graph_source(response);
 
     fs::create_dir_all(generated_dir)?;
@@ -205,24 +199,22 @@ fn write_response_files(
 }
 
 #[derive(Serialize)]
-struct PositionedGraph {
+struct GraphDocument {
     direction: &'static str,
     name: Option<String>,
     description: Option<String>,
     width: f64,
     height: f64,
-    nodes: Vec<PositionedNode>,
+    nodes: Vec<GraphNodeData>,
     edges: Vec<PositionedEdge>,
 }
 
 #[derive(Serialize)]
-struct PositionedNode {
+struct GraphNodeData {
     id: String,
     name: Option<String>,
     description: Option<String>,
     sources: Vec<crate::graph_parser::SourceReference>,
-    x: f64,
-    y: f64,
     width: f64,
     height: f64,
 }
@@ -237,31 +229,25 @@ struct PositionedEdge {
     arrow_end: bool,
 }
 
-pub(crate) fn serialize_positioned_graph(graph: &Graph) -> io::Result<String> {
-    let (positions, width, height) = layout_graph(graph);
-    let document = PositionedGraph {
+pub(crate) fn serialize_graph_document(graph: &Graph) -> io::Result<String> {
+    let document = GraphDocument {
         direction: match graph.direction {
             GraphDirection::TopDown => "TD",
             GraphDirection::LeftRight => "LR",
         },
         name: graph.name.clone(),
         description: graph.description.clone(),
-        width,
-        height,
+        width: 320.0,
+        height: 200.0,
         nodes: graph
             .nodes
             .iter()
             .map(|node| {
-                let &(x, y) = positions.get(node.id.as_str()).ok_or_else(|| {
-                    io::Error::other(format!("layout did not place graph node '{}'", node.id))
-                })?;
-                Ok(PositionedNode {
+                Ok(GraphNodeData {
                     id: node.id.clone(),
                     name: node.name.clone(),
                     description: node.description.clone(),
                     sources: node.sources.clone(),
-                    x,
-                    y,
                     width: NODE_WIDTH,
                     height: NODE_HEIGHT,
                 })
@@ -288,7 +274,6 @@ fn render_page_html(
     graph: &Graph,
     graph_json: &str,
     source_json: &str,
-    wasm_base64: &str,
     server_mode: bool,
 ) -> String {
     let title = graph
@@ -312,7 +297,14 @@ fn render_page_html(
         .replace(GRAPH_DETAILS_MARKER, &format!("{title}{description}"))
         .replace(GRAPH_JSON_MARKER, graph_json)
         .replace(SOURCE_JSON_MARKER, source_json)
-        .replace(ROUTER_WASM_MARKER, wasm_base64)
+        .replace(
+            ELK_JS_MARKER,
+            include_str!("../public/vendor/elk.bundled.js"),
+        )
+        .replace(
+            ELK_LICENSE_MARKER,
+            &escape_html(include_str!("../public/vendor/elk.LICENSE")),
+        )
         .replace(HIGHLIGHT_JS_MARKER, HIGHLIGHT_JS)
         .replace(
             SERVER_MODE_MARKER,
@@ -329,39 +321,8 @@ pub(crate) fn render_web_index(server_mode: bool) -> String {
         edges: Vec::new(),
     };
     let graph_json =
-        serialize_positioned_graph(&graph).expect("an empty graph can always be serialized");
-    let wasm_base64 = router_wasm_base64();
-    render_page_html(&graph, &graph_json, "{}", &wasm_base64, server_mode)
-}
-
-fn router_wasm_base64() -> String {
-    encode_base64(include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/codemap_router.wasm"
-    )))
-}
-
-fn encode_base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let first = chunk[0];
-        let second = *chunk.get(1).unwrap_or(&0);
-        let third = *chunk.get(2).unwrap_or(&0);
-        encoded.push(ALPHABET[(first >> 2) as usize] as char);
-        encoded.push(ALPHABET[(((first & 0b11) << 4) | (second >> 4)) as usize] as char);
-        encoded.push(if chunk.len() > 1 {
-            ALPHABET[(((second & 0b1111) << 2) | (third >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        encoded.push(if chunk.len() > 2 {
-            ALPHABET[(third & 0b111111) as usize] as char
-        } else {
-            '='
-        });
-    }
-    encoded
+        serialize_graph_document(&graph).expect("an empty graph can always be serialized");
+    render_page_html(&graph, &graph_json, "{}", server_mode)
 }
 
 fn format_history(history: &[Step], validation_errors: &[Option<String>]) -> String {
@@ -435,132 +396,6 @@ fn create_timestamped_dir(generated_dir: &Path) -> io::Result<PathBuf> {
     }
 }
 
-fn layout_graph(graph: &Graph) -> (HashMap<String, (f64, f64)>, f64, f64) {
-    if graph.nodes.is_empty() {
-        return (HashMap::new(), 320.0, 200.0);
-    }
-
-    let mut bands = HashMap::new();
-    let mut discovery_order = Vec::with_capacity(graph.nodes.len());
-    let mut queue = VecDeque::new();
-
-    for node in &graph.nodes {
-        if bands.contains_key(&node.id) {
-            continue;
-        }
-        let start_band = bands.values().copied().max().map_or(0, |band| band + 2);
-        bands.insert(node.id.clone(), start_band);
-        discovery_order.push(node.id.clone());
-        queue.push_back(node.id.clone());
-
-        while let Some(current) = queue.pop_front() {
-            let current_band = bands[&current];
-            for edge in &graph.edges {
-                let neighbor_and_band = if edge.arrow_start && edge.arrow_end {
-                    if edge.from == current {
-                        Some((&edge.to, current_band))
-                    } else if edge.to == current {
-                        Some((&edge.from, current_band))
-                    } else {
-                        None
-                    }
-                } else if edge.from == current && edge.arrow_end {
-                    Some((&edge.to, current_band + 1))
-                } else if edge.to == current {
-                    Some((&edge.from, current_band - 1))
-                } else {
-                    None
-                };
-
-                if let Some((neighbor, band)) = neighbor_and_band
-                    && !bands.contains_key(neighbor)
-                {
-                    bands.insert(neighbor.clone(), band);
-                    discovery_order.push(neighbor.clone());
-                    queue.push_back(neighbor.clone());
-                }
-            }
-        }
-    }
-
-    let mut nodes_by_band = HashMap::<i32, Vec<String>>::new();
-    for id in &discovery_order {
-        let band = bands[id];
-        nodes_by_band.entry(band).or_default().push(id.clone());
-    }
-    for (band, ids) in &mut nodes_by_band {
-        let discovered = ids.clone();
-        let mut ordered = Vec::with_capacity(ids.len());
-        for id in discovered {
-            let mut lateral_queue = VecDeque::from([id]);
-            while let Some(current) = lateral_queue.pop_front() {
-                if ordered.contains(&current) {
-                    continue;
-                }
-                ordered.push(current.clone());
-                for edge in &graph.edges {
-                    let neighbor = if edge.arrow_start && edge.arrow_end && edge.from == current {
-                        Some(&edge.to)
-                    } else if edge.arrow_start && edge.arrow_end && edge.to == current {
-                        Some(&edge.from)
-                    } else {
-                        None
-                    };
-                    if let Some(neighbor) = neighbor
-                        && bands.get(neighbor) == Some(band)
-                        && ids.contains(neighbor)
-                        && !ordered.contains(neighbor)
-                    {
-                        lateral_queue.push_back(neighbor.clone());
-                    }
-                }
-            }
-        }
-        *ids = ordered;
-    }
-
-    let min_band = *bands.values().min().unwrap_or(&0);
-    let max_band = *bands.values().max().unwrap_or(&0);
-    let max_lanes = nodes_by_band.values().map(Vec::len).max().unwrap_or(1);
-    let mut positions = HashMap::with_capacity(graph.nodes.len());
-
-    for (band, ids) in &nodes_by_band {
-        for (lane, id) in ids.iter().enumerate() {
-            let (x, y) = match graph.direction {
-                GraphDirection::LeftRight => (
-                    MARGIN + (band - min_band) as f64 * (NODE_WIDTH + HORIZONTAL_GAP),
-                    MARGIN + lane as f64 * (NODE_HEIGHT + LANE_GAP),
-                ),
-                GraphDirection::TopDown => (
-                    MARGIN + lane as f64 * (NODE_WIDTH + LANE_GAP),
-                    MARGIN + (band - min_band) as f64 * (NODE_HEIGHT + VERTICAL_GAP),
-                ),
-            };
-            positions.insert(id.clone(), (x, y));
-        }
-    }
-
-    let (width, height) = match graph.direction {
-        GraphDirection::LeftRight => (
-            MARGIN * 2.0
-                + (max_band - min_band) as f64 * (NODE_WIDTH + HORIZONTAL_GAP)
-                + NODE_WIDTH,
-            MARGIN * 2.0
-                + max_lanes.saturating_sub(1) as f64 * (NODE_HEIGHT + LANE_GAP)
-                + NODE_HEIGHT,
-        ),
-        GraphDirection::TopDown => (
-            MARGIN * 2.0
-                + max_lanes.saturating_sub(1) as f64 * (NODE_WIDTH + LANE_GAP)
-                + NODE_WIDTH,
-            MARGIN * 2.0
-                + (max_band - min_band) as f64 * (NODE_HEIGHT + VERTICAL_GAP)
-                + NODE_HEIGHT,
-        ),
-    };
-    (positions, width.max(320.0), height.max(200.0))
-}
-
 pub fn open_in_browser(path: impl AsRef<Path>) -> io::Result<()> {
     let path = fs::canonicalize(path)?;
     #[cfg(target_os = "windows")]
@@ -619,13 +454,6 @@ Process -.->|optional| Output
     }
 
     #[test]
-    fn encodes_router_wasm_as_base64() {
-        assert_eq!(encode_base64(b"f"), "Zg==");
-        assert_eq!(encode_base64(b"fo"), "Zm8=");
-        assert_eq!(encode_base64(b"foo"), "Zm9v");
-    }
-
-    #[test]
     fn web_index_leaves_graph_metadata_empty_for_javascript() {
         let html = render_web_index(false);
         assert!(html.contains("<div class=\"graph-details\" id=\"graph-details\"></div>"));
@@ -649,21 +477,31 @@ Process -.->|optional| Output
     }
 
     #[test]
-    fn exports_node_positions_and_connection_data_as_json() {
+    fn embeds_elk_and_defers_node_placement_to_the_browser() {
+        let html = render_web_index(false);
+        assert!(html.contains("org.eclipse.elk.layered"));
+        assert!(html.contains("elk.edgeRouting"));
+        assert!(!html.contains(ELK_JS_MARKER));
+        assert!(!html.contains(ELK_LICENSE_MARKER));
+        assert!(html.contains("Eclipse Public License - v 2.0"));
+    }
+
+    #[test]
+    fn exports_graph_data_for_elks_initial_layout() {
         let graph_source = GRAPH.replace(
             "<name>Input</name><desc>Read source</desc>",
             "<name>Input</name><desc>Read source</desc><source>src/main.rs:4-8</source>",
         );
         let graph = parse(&graph_source).unwrap();
-        let json = serialize_positioned_graph(&graph).unwrap();
+        let json = serialize_graph_document(&graph).unwrap();
         let document: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(document["direction"], "TD");
         assert_eq!(document["name"], "Test graph");
         assert_eq!(document["nodes"].as_array().unwrap().len(), 3);
         assert_eq!(document["nodes"][0]["id"], "Input");
-        assert_eq!(document["nodes"][0]["x"], MARGIN);
-        assert_eq!(document["nodes"][0]["y"], MARGIN);
+        assert!(document["nodes"][0].get("x").is_none());
+        assert!(document["nodes"][0].get("y").is_none());
         assert_eq!(document["nodes"][0]["width"], NODE_WIDTH);
         assert_eq!(document["nodes"][0]["height"], NODE_HEIGHT);
         assert_eq!(document["nodes"][0]["sources"][0]["path"], "src/main.rs");
@@ -719,74 +557,6 @@ Process -.->|optional| Output
         assert!(output_dir.join("response.txt").is_file());
         assert!(!output_dir.join("response.html").exists());
         fs::remove_dir_all(output_dir).unwrap();
-    }
-
-    #[test]
-    fn lays_out_children_on_next_row_and_new_parents_on_previous_row() {
-        let graph = parse(
-            r#"<graph type="TD" name="Layout test" desc="Checks parent and child placement">
-Root["<name>Root</name>"]
-Child["<name>Child</name>"]
-Parent["<name>Parent</name>"]
-Root --> Child
-Parent --> Root
-</graph>
-"#,
-        )
-        .unwrap();
-        let (positions, _, _) = layout_graph(&graph);
-        let root = positions["Root"];
-        let child = positions["Child"];
-        let parent = positions["Parent"];
-
-        assert_eq!(root.0, child.0);
-        assert_eq!(root.0, parent.0);
-        assert!(parent.1 < root.1);
-        assert!(root.1 < child.1);
-    }
-
-    #[test]
-    fn keeps_siblings_on_the_same_band_and_spaces_them_apart() {
-        let graph = parse(
-            r#"<graph type="LR" name="Sibling layout" desc="Checks sibling placement">
-Root["<name>Root</name>"]
-First["<name>First</name>"]
-Second["<name>Second</name>"]
-Root --> First
-Root --> Second
-</graph>
-"#,
-        )
-        .unwrap();
-        let (positions, _, _) = layout_graph(&graph);
-        let first = positions["First"];
-        let second = positions["Second"];
-
-        assert_eq!(first.1, second.1);
-        assert!((first.0 - second.0).abs() >= NODE_WIDTH + LANE_GAP);
-    }
-
-    #[test]
-    fn keeps_two_way_neighbors_on_the_same_band_next_to_each_other() {
-        let graph = parse(
-            r#"<graph type="LR" name="Neighbor layout" desc="Checks two-way neighbor placement">
-Root["<name>Root</name>"]
-Neighbor["<name>Neighbor</name>"]
-Child["<name>Child</name>"]
-Root <--> Neighbor
-Root --> Child
-</graph>
-"#,
-        )
-        .unwrap();
-        let (positions, _, _) = layout_graph(&graph);
-        let root = positions["Root"];
-        let neighbor = positions["Neighbor"];
-        let child = positions["Child"];
-
-        assert_eq!(root.1, neighbor.1);
-        assert!((root.0 - neighbor.0).abs() >= NODE_WIDTH + LANE_GAP);
-        assert!(child.1 > root.1);
     }
 
     #[test]

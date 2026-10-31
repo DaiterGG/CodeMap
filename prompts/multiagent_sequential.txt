@@ -1,0 +1,2 @@
+bellow is an output of previous agent that was writing the graph up to that point. You job is analyze current chunck of code and rewrite that graph, adding new nodes to it.
+If your context have code from partial nodes, replace partial with proper nodes

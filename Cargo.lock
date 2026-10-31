@@ -142,13 +142,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codemap-router"
-version = "0.1.0"
-dependencies = [
- "libavoid",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -334,7 +327,6 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
- "codemap-router",
  "dotenvy",
  "getrandom 0.3.4",
  "reqwest",
@@ -577,11 +569,6 @@ dependencies = [
  "futures-util",
  "wasm-bindgen",
 ]
-
-[[package]]
-name = "libavoid"
-version = "0.1.0"
-source = "git+https://github.com/boxabirds/libavoid-rust?rev=f72fe0b6a541b8f32a1c160d38c889f0c697eecd#f72fe0b6a541b8f32a1c160d38c889f0c697eecd"
 
 [[package]]
 name = "libc"

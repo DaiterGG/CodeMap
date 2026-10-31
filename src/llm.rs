@@ -32,10 +32,21 @@ pub fn list_model_ids() -> Result<Vec<String>, reqwest::Error> {
     Ok(model_ids)
 }
 
+pub fn model_context_length(model_id: &str) -> Result<Option<usize>, reqwest::Error> {
+    let response = Client::new()
+        .get(OPENROUTER_MODELS_URL)
+        .timeout(Duration::from_secs(30))
+        .send()?
+        .error_for_status()?;
+    let catalog: ModelCatalog = response.json()?;
+    Ok(catalog.context_length_for(model_id))
+}
+
 pub struct OpenRouter {
     client: Client,
     api_key: String,
     model: String,
+    context_length: Option<usize>,
 }
 
 impl OpenRouter {
@@ -44,7 +55,17 @@ impl OpenRouter {
             client: Client::new(),
             api_key: api_key.into(),
             model: model.into(),
+            context_length: None,
         }
+    }
+
+    pub fn with_context_length(mut self, context_length: Option<usize>) -> Self {
+        self.context_length = context_length;
+        self
+    }
+
+    pub fn context_length(&self) -> Option<usize> {
+        self.context_length
     }
 
     pub fn from_env(model: impl Into<String>) -> Result<Self, OpenRouterConfigError> {
@@ -110,6 +131,10 @@ impl ChatClient for OpenRouter {
     fn complete(&self, messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>> {
         OpenRouter::complete(self, messages)
             .map_err(|error| Box::new(error) as Box<dyn Error + Send + Sync>)
+    }
+
+    fn context_length(&self) -> Option<usize> {
+        self.context_length
     }
 }
 
@@ -191,9 +216,20 @@ struct ModelCatalog {
     data: Vec<ModelEntry>,
 }
 
+impl ModelCatalog {
+    fn context_length_for(&self, model_id: &str) -> Option<usize> {
+        self.data
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.context_length)
+    }
+}
+
 #[derive(Deserialize)]
 struct ModelEntry {
     id: String,
+    #[serde(default)]
+    context_length: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -250,5 +286,32 @@ impl Error for OpenRouterError {
             Self::Decode { error, .. } => Some(error),
             Self::ApiStatus { .. } | Self::MissingChoice | Self::MissingContent => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_context_length_for_the_selected_model() {
+        let catalog: ModelCatalog = serde_json::from_str(
+            r#"{"data":[{"id":"provider/other","context_length":4096},{"id":"provider/selected","context_length":32768}]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(catalog.context_length_for("provider/selected"), Some(32768));
+        assert_eq!(catalog.context_length_for("provider/missing"), None);
+    }
+
+    #[test]
+    fn openrouter_client_exposes_its_context_length() {
+        let client = OpenRouter::new("key", "provider/model").with_context_length(Some(32768));
+
+        assert_eq!(client.context_length(), Some(32768));
+        assert_eq!(
+            <OpenRouter as ChatClient>::context_length(&client),
+            Some(32768)
+        );
     }
 }

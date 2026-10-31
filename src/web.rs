@@ -519,7 +519,7 @@ async fn generate(
     tokio::task::spawn_blocking(move || {
         let result = generate_graph(&path, &model, user_key.as_deref())
             .and_then(|generated| {
-                let json = crate::page::serialize_positioned_graph(&generated.graph)?;
+                let json = crate::page::serialize_graph_document(&generated.graph)?;
                 let graph = serde_json::from_str(&json).map_err(io::Error::other)?;
                 let references = generated
                     .graph
@@ -577,7 +577,8 @@ fn generate_graph(
             .map_err(io::Error::other)?
             .ok_or_else(|| io::Error::other("configure OpenRouter authentication first"))?,
     };
-    let llm = crate::llm::OpenRouter::new(api_key, model);
+    let context_length = crate::llm::model_context_length(model).map_err(io::Error::other)?;
+    let llm = crate::llm::OpenRouter::new(api_key, model).with_context_length(context_length);
     let mut steps = crate::step::StepStack::with_files(source_files);
     let mut step_id = steps
         .call(
@@ -594,7 +595,12 @@ fn generate_graph(
             .response
             .content;
         validation_errors.push(None);
-        match crate::graph_parser::validate(output) {
+        match crate::graph_parser::validate_with_sources(
+            output,
+            steps
+                .source_files()
+                .expect("generated graph context includes source files"),
+        ) {
             Ok(()) => {
                 let graph = crate::graph_parser::parse(output).map_err(|diagnostic| {
                     io::Error::new(io::ErrorKind::InvalidData, diagnostic.correction_details())
@@ -626,6 +632,9 @@ fn generate_graph(
                     }
                     crate::graph_parser::DiagnosticKind::RedundantConnection => {
                         include_str!("../prompts/redundant_connection.txt")
+                    }
+                    crate::graph_parser::DiagnosticKind::SourceReference => {
+                        include_str!("../prompts/source_reference_error.txt")
                     }
                 };
                 step_id = steps

@@ -42,10 +42,11 @@ Read files under PATH and ask the configured model a question.
 
 Options:
       --path PATH  Directory to read (default: examples/small_repo)
-      --test       Use hyperqwen/qwen3.8-27b with TEST_TOKEN
+      --test-api   Use hyperqwen/qwen3.8-27b with TEST_TOKEN
       --web        Host the web page on localhost and open it in a browser
       --server     Serve the web page on all interfaces at port 36800
       --models     List all OpenRouter model IDs
+      --tokens     Count bytes in the numbered source context and exit
       --prompt     Write the initial model request to prompt.txt
       --gr FILE    Render a custom graph file as HTML and open it in a browser
       --no-readme  Exclude files named README (case-insensitive, any extension)
@@ -63,6 +64,7 @@ fn main() {
     let mut web_mode = false;
     let mut server_mode = false;
     let mut models_mode = false;
+    let mut tokens_mode = false;
     let mut write_prompt = false;
     let mut test_mode = false;
     let mut model = DEFAULT_MODEL.to_owned();
@@ -78,8 +80,9 @@ fn main() {
             "--web" => web_mode = true,
             "--server" => server_mode = true,
             "--models" => models_mode = true,
+            "--tokens" => tokens_mode = true,
             "--prompt" => write_prompt = true,
-            "--test" => test_mode = true,
+            "--test-api" => test_mode = true,
             "--no-readme" => exclude_readme = true,
             "--no-md" => exclude_markdown = true,
             "--non-txt" => include_non_text = true,
@@ -152,13 +155,29 @@ fn main() {
     if models_mode
         && (web_mode
             || server_mode
+            || tokens_mode
             || test_mode
             || model_provided
             || graph_path.is_some()
             || path_provided)
     {
         eprintln!(
-            "error: --models cannot be combined with --web, --server, --test, --model, --gr, or a path\n\n{USAGE}"
+            "error: --models cannot be combined with --web, --server, --tokens, --test-api, --model, --gr, or a path\n\n{USAGE}"
+        );
+        process::exit(2);
+    }
+
+    if tokens_mode
+        && (web_mode
+            || server_mode
+            || models_mode
+            || write_prompt
+            || test_mode
+            || model_provided
+            || graph_path.is_some())
+    {
+        eprintln!(
+            "error: --tokens cannot be combined with --web, --server, --models, --prompt, --test-api, --model, or --gr\n\n{USAGE}"
         );
         process::exit(2);
     }
@@ -169,12 +188,14 @@ fn main() {
     }
 
     if test_mode && model_provided {
-        eprintln!("error: --test selects its own model and cannot be used with --model\n\n{USAGE}");
+        eprintln!(
+            "error: --test-api selects its own model and cannot be used with --model\n\n{USAGE}"
+        );
         process::exit(2);
     }
 
     if test_mode && (web_mode || server_mode) {
-        eprintln!("error: --test cannot be used with --web or --server\n\n{USAGE}");
+        eprintln!("error: --test-api cannot be used with --web or --server\n\n{USAGE}");
         process::exit(2);
     }
 
@@ -190,6 +211,26 @@ fn main() {
                 process::exit(1);
             }
         }
+        return;
+    }
+
+    if tokens_mode {
+        let source_files = match hello_cli::files::read_directory_files_with_options(
+            &path,
+            hello_cli::files::ReadOptions {
+                exclude_readme,
+                exclude_markdown,
+                include_non_text,
+            },
+        ) {
+            Ok(files) => files,
+            Err(error) => {
+                eprintln!("error: could not read {}: {error}", path.display());
+                process::exit(1);
+            }
+        };
+        let context = hello_cli::files::format_source_files(&source_files);
+        println!("{}", context.len());
         return;
     }
 
@@ -255,13 +296,21 @@ fn main() {
             }
         }
     } else {
-        match OpenRouter::from_env(model) {
-            Ok(llm) => Box::new(llm),
+        let llm = match OpenRouter::from_env(model.clone()) {
+            Ok(llm) => llm,
             Err(error) => {
                 eprintln!("error: could not configure OpenRouter: {error}");
                 process::exit(1);
             }
-        }
+        };
+        let context_length = match hello_cli::llm::model_context_length(&model) {
+            Ok(context_length) => context_length,
+            Err(error) => {
+                eprintln!("error: could not get model context size: {error}");
+                process::exit(1);
+            }
+        };
+        Box::new(llm.with_context_length(context_length))
     };
 
     let mut steps = StepStack::with_files(source_files);
@@ -305,38 +354,46 @@ fn main() {
         }
 
         let output = &steps.step(step_id).unwrap().response.content;
-        let (correction_prompt, validation_error) = match hello_cli::graph_parser::validate(output)
-        {
-            Ok(()) => break,
-            Err(diagnostic) => {
-                let validation_error = format!(
-                    "Graph validation failed ({:?}):\n{}",
-                    diagnostic.kind,
-                    diagnostic.correction_details()
-                );
-                *validation_errors.last_mut().unwrap() = Some(validation_error.clone());
-                if let Err(error) = hello_cli::page::write_response_history_snapshot(
-                    &output_dir,
-                    steps.steps(),
-                    &validation_errors,
-                ) {
-                    eprintln!("error: could not update response history: {error}");
-                    process::exit(1);
+        let (correction_prompt, validation_error) =
+            match hello_cli::graph_parser::validate_with_sources(
+                output,
+                steps
+                    .source_files()
+                    .expect("generated graph context includes source files"),
+            ) {
+                Ok(()) => break,
+                Err(diagnostic) => {
+                    let validation_error = format!(
+                        "Graph validation failed ({:?}):\n{}",
+                        diagnostic.kind,
+                        diagnostic.correction_details()
+                    );
+                    *validation_errors.last_mut().unwrap() = Some(validation_error.clone());
+                    if let Err(error) = hello_cli::page::write_response_history_snapshot(
+                        &output_dir,
+                        steps.steps(),
+                        &validation_errors,
+                    ) {
+                        eprintln!("error: could not update response history: {error}");
+                        process::exit(1);
+                    }
+                    let prompt = match diagnostic.kind {
+                        hello_cli::graph_parser::DiagnosticKind::Syntax => {
+                            include_str!("../prompts/syntax_error.txt")
+                        }
+                        hello_cli::graph_parser::DiagnosticKind::RedundantConnection => {
+                            include_str!("../prompts/redundant_connection.txt")
+                        }
+                        hello_cli::graph_parser::DiagnosticKind::SourceReference => {
+                            include_str!("../prompts/source_reference_error.txt")
+                        }
+                    };
+                    (
+                        format!("{prompt}\n\n{}", diagnostic.correction_details()),
+                        validation_error,
+                    )
                 }
-                let prompt = match diagnostic.kind {
-                    hello_cli::graph_parser::DiagnosticKind::Syntax => {
-                        include_str!("../prompts/syntax_error.txt")
-                    }
-                    hello_cli::graph_parser::DiagnosticKind::RedundantConnection => {
-                        include_str!("../prompts/redundant_connection.txt")
-                    }
-                };
-                (
-                    format!("{prompt}\n\n{}", diagnostic.correction_details()),
-                    validation_error,
-                )
-            }
-        };
+            };
         if retries == MAX_RETRIES {
             eprintln!("final fail: {validation_error}");
             process::exit(1);
