@@ -23,11 +23,11 @@ const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
 const NODE_WIDTH: f64 = 210.0;
 const NODE_HEIGHT: f64 = 131.0;
 
-pub fn write_response_page(thought: Option<&str>, response: &str) -> io::Result<PathBuf> {
+pub fn write_response_page(_thought: Option<&str>, response: &str) -> io::Result<PathBuf> {
     let output_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("generated");
-    write_response_files(&output_dir, thought, response, None)
+    write_response_files(&output_dir, response)
 }
 
 pub fn write_graph_page(graph: &Graph, graph_source: &str) -> io::Result<PathBuf> {
@@ -59,33 +59,22 @@ pub fn create_response_history_dir() -> io::Result<PathBuf> {
     create_timestamped_dir(&output_dir)
 }
 
-pub fn write_web_generation_files(
-    graph: &Graph,
-    graph_source: &str,
-    history: &[Step],
-    validation_errors: &[Option<String>],
-) -> io::Result<PathBuf> {
+pub fn write_web_generation_files(graph: &Graph, graph_source: &str) -> io::Result<PathBuf> {
     let generated_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("generated");
     fs::create_dir_all(&generated_dir)?;
     let output_dir = create_timestamped_dir(&generated_dir)?;
-    write_graph_artifacts(&output_dir, graph, graph_source, history, validation_errors)?;
+    write_graph_artifacts(&output_dir, graph, graph_source)?;
     Ok(output_dir)
 }
 
-fn write_graph_artifacts(
-    output_dir: &Path,
-    graph: &Graph,
-    graph_source: &str,
-    history: &[Step],
-    validation_errors: &[Option<String>],
-) -> io::Result<()> {
+fn write_graph_artifacts(output_dir: &Path, graph: &Graph, graph_source: &str) -> io::Result<()> {
     let graph_json = serialize_graph_document(graph)?;
     fs::write(output_dir.join("graph.json"), graph_json)?;
     crate::mermaid::write_graph_file(output_dir, graph)?;
     crate::graph_file::write_graph_file(output_dir, graph_source)?;
-    write_response_history_snapshot(output_dir, history, validation_errors)
+    Ok(())
 }
 
 pub fn write_response_history_snapshot(
@@ -110,7 +99,7 @@ pub fn finalize_response_history_page(
 pub fn finalize_response_history_page_with_sources(
     output_dir: &Path,
     history: &[Step],
-    validation_errors: &[Option<String>],
+    _validation_errors: &[Option<String>],
     source_root: Option<&Path>,
 ) -> io::Result<PathBuf> {
     let Some(final_step) = history.last() else {
@@ -131,7 +120,6 @@ pub fn finalize_response_history_page_with_sources(
         output_dir,
         crate::graph_file::normalize_graph_source(&final_step.response.content),
     )?;
-    write_response_history_snapshot(output_dir, history, validation_errors)?;
     Ok(output_path)
 }
 
@@ -172,12 +160,7 @@ fn serialize_embedded_sources(graph: &Graph, source_root: Option<&Path>) -> io::
     Ok(json.replace('<', "\\u003c"))
 }
 
-fn write_response_files(
-    generated_dir: &Path,
-    thought: Option<&str>,
-    response: &str,
-    history: Option<&[Step]>,
-) -> io::Result<PathBuf> {
+fn write_response_files(generated_dir: &Path, response: &str) -> io::Result<PathBuf> {
     let graph = crate::graph_file::parse_graph(response)?;
     let graph_json = serialize_graph_document(&graph)?;
     let html = render_page_html(&graph, &graph_json, "{}", false);
@@ -190,11 +173,6 @@ fn write_response_files(
     fs::write(output_dir.join("graph.json"), &graph_json)?;
     crate::mermaid::write_graph_file(&output_dir, &graph)?;
     crate::graph_file::write_graph_file(&output_dir, raw_graph)?;
-    let text = history.map_or_else(
-        || format_attempt(1, None, thought, response, None),
-        |history| format_history(history, &[]),
-    );
-    fs::write(output_dir.join("response.txt"), text)?;
     Ok(output_path)
 }
 
@@ -319,6 +297,7 @@ pub(crate) fn render_web_index(server_mode: bool) -> String {
         description: None,
         nodes: Vec::new(),
         edges: Vec::new(),
+        partials: Vec::new(),
     };
     let graph_json =
         serialize_graph_document(&graph).expect("an empty graph can always be serialized");
@@ -460,6 +439,14 @@ Process -.->|optional| Output
         assert!(!html.contains("<h1>CodeMap</h1>"));
         assert!(!html.contains("{{GRAPH_DETAILS}}"));
         assert!(html.contains("data-server-mode=\"false\""));
+        assert!(html.contains("id=\"generation-settings-button\""));
+        assert!(html.contains("#model-select:disabled"));
+        assert!(html.contains("id=\"generation-settings-dialog\""));
+        assert!(html.contains("id=\"include-gitignored\" type=\"checkbox\""));
+        assert!(html.contains("id=\"include-non-text\" type=\"checkbox\""));
+        assert!(html.contains("id=\"ignore-big-files\" type=\"checkbox\""));
+        assert!(html.contains("ignore_big_files: ignoreBigFiles.checked"));
+        assert!(html.contains("id=\"openrouter-sign-in-button\""));
     }
 
     #[test]
@@ -543,18 +530,12 @@ Process -.->|optional| Output
         let output_dir = std::env::temp_dir().join(format!("hello-cli-web-export-{unique}"));
         fs::create_dir_all(&output_dir).unwrap();
         let graph = parse(GRAPH).unwrap();
-        let history = [Step {
-            id: crate::step::StepId(0),
-            input: vec![crate::step::Message::user("Generate a graph")],
-            response: crate::step::Message::assistant(GRAPH),
-        }];
-
-        write_graph_artifacts(&output_dir, &graph, GRAPH, &history, &[None]).unwrap();
+        write_graph_artifacts(&output_dir, &graph, GRAPH).unwrap();
 
         assert!(output_dir.join("graph.json").is_file());
         assert!(output_dir.join("graph.mmd").is_file());
         assert!(output_dir.join("graph.gr").is_file());
-        assert!(output_dir.join("response.txt").is_file());
+        assert!(!output_dir.join("response.txt").exists());
         assert!(!output_dir.join("response.html").exists());
         fs::remove_dir_all(output_dir).unwrap();
     }
@@ -597,6 +578,7 @@ Process -.->|optional| Output
         assert_eq!(document["nodes"].as_array().unwrap().len(), 3);
         assert_eq!(document["edges"].as_array().unwrap().len(), 2);
         assert!(html.contains(&graph_json));
+        assert!(!output_dir.join("response.txt").exists());
         fs::remove_dir_all(output_dir).unwrap();
     }
 
@@ -696,7 +678,7 @@ Process -.->|optional| Output
             .unwrap()
             .as_nanos();
         let generated_dir = std::env::temp_dir().join(format!("hello-cli-invalid-{unique}"));
-        let error = write_response_files(&generated_dir, None, "not a graph", None).unwrap_err();
+        let error = write_response_files(&generated_dir, "not a graph").unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(!generated_dir.exists());
     }

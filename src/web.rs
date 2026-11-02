@@ -68,8 +68,6 @@ struct PendingAuth {
 struct GeneratedGraph {
     graph: crate::graph_parser::Graph,
     source: String,
-    history: Vec<crate::step::Step>,
-    validation_errors: Vec<Option<String>>,
 }
 
 struct SourceAccess {
@@ -443,6 +441,22 @@ struct GenerateResponse {
 struct GenerateRequest {
     source: String,
     model: String,
+    #[serde(default)]
+    include_gitignored: bool,
+    #[serde(default)]
+    include_non_text: bool,
+    #[serde(default)]
+    ignore_big_files: bool,
+}
+
+impl GenerateRequest {
+    fn read_options(&self) -> crate::files::ReadOptions {
+        crate::files::ReadOptions {
+            exclude_gitignored: !self.include_gitignored,
+            include_non_text: self.include_non_text,
+            ..crate::files::ReadOptions::default()
+        }
+    }
 }
 
 async fn generate(
@@ -480,6 +494,8 @@ async fn generate(
             "select a valid model before generating".to_owned(),
         ));
     }
+    let read_options = request.read_options();
+    let ignore_big_files = request.ignore_big_files;
     let model = request.model;
     let user_key = state
         .auth
@@ -517,31 +533,32 @@ async fn generate(
     };
     let task_state = Arc::clone(&state);
     tokio::task::spawn_blocking(move || {
-        let result = generate_graph(&path, &model, user_key.as_deref())
-            .and_then(|generated| {
-                let json = crate::page::serialize_graph_document(&generated.graph)?;
-                let graph = serde_json::from_str(&json).map_err(io::Error::other)?;
-                let references = generated
-                    .graph
-                    .nodes
-                    .iter()
-                    .flat_map(|node| node.sources.iter().cloned())
-                    .collect();
-                crate::page::write_web_generation_files(
-                    &generated.graph,
-                    &generated.source,
-                    &generated.history,
-                    &generated.validation_errors,
-                )?;
-                Ok((
-                    graph,
-                    SourceAccess {
-                        root: path.clone(),
-                        references,
-                    },
-                ))
-            })
-            .map_err(|error| error.to_string());
+        let result = generate_graph(
+            &path,
+            &model,
+            user_key.as_deref(),
+            read_options,
+            ignore_big_files,
+        )
+        .and_then(|generated| {
+            let json = crate::page::serialize_graph_document(&generated.graph)?;
+            let graph = serde_json::from_str(&json).map_err(io::Error::other)?;
+            let references = generated
+                .graph
+                .nodes
+                .iter()
+                .flat_map(|node| node.sources.iter().cloned())
+                .collect();
+            crate::page::write_web_generation_files(&generated.graph, &generated.source)?;
+            Ok((
+                graph,
+                SourceAccess {
+                    root: path.clone(),
+                    references,
+                },
+            ))
+        })
+        .map_err(|error| error.to_string());
         if let Ok(mut generation) = task_state.generation.lock()
             && generation.id == id
         {
@@ -555,7 +572,10 @@ async fn generate(
                         GenerationStatus::Failed("source access state unavailable".to_owned())
                     }
                 },
-                Err(error) => GenerationStatus::Failed(error),
+                Err(error) => {
+                    eprintln!("web generation failed: {error}");
+                    GenerationStatus::Failed(error)
+                }
             };
         }
     });
@@ -569,8 +589,10 @@ fn generate_graph(
     path: &std::path::Path,
     model: &str,
     user_key: Option<&str>,
+    read_options: crate::files::ReadOptions,
+    ignore_big_files: bool,
 ) -> io::Result<GeneratedGraph> {
-    let source_files = crate::files::read_directory_files(path)?;
+    let source_files = crate::files::read_directory_files_with_options(path, read_options)?;
     let api_key = match user_key {
         Some(key) => key.to_owned(),
         None => crate::llm::OpenRouter::configured_api_key()
@@ -579,6 +601,17 @@ fn generate_graph(
     };
     let context_length = crate::llm::model_context_length(model).map_err(io::Error::other)?;
     let llm = crate::llm::OpenRouter::new(api_key, model).with_context_length(context_length);
+    if let Some(context_length) = llm.context_length()
+        && crate::multiagent::should_use_multiagent(&source_files, context_length)
+    {
+        let generated =
+            crate::multiagent::generate(&llm, &source_files, context_length, ignore_big_files)?;
+        return Ok(GeneratedGraph {
+            graph: generated.graph,
+            source: generated.source,
+        });
+    }
+
     let mut steps = crate::step::StepStack::with_files(source_files);
     let mut step_id = steps
         .call(
@@ -608,8 +641,6 @@ fn generate_graph(
                 return Ok(GeneratedGraph {
                     graph,
                     source: output.to_owned(),
-                    history: steps.steps().to_vec(),
-                    validation_errors,
                 });
             }
             Err(diagnostic) => {
@@ -635,6 +666,9 @@ fn generate_graph(
                     }
                     crate::graph_parser::DiagnosticKind::SourceReference => {
                         include_str!("../prompts/source_reference_error.txt")
+                    }
+                    crate::graph_parser::DiagnosticKind::PartialReference => {
+                        include_str!("../prompts/partial_error.txt")
                     }
                 };
                 step_id = steps
@@ -890,6 +924,7 @@ fn code_challenge(verifier: &str) -> String {
 struct ModelOption {
     id: String,
     name: String,
+    context_length: Option<usize>,
     is_free: bool,
 }
 
@@ -902,6 +937,8 @@ struct ModelCatalog {
 struct ApiModel {
     id: String,
     name: String,
+    #[serde(default)]
+    context_length: Option<usize>,
     architecture: ModelArchitecture,
     #[serde(default)]
     pricing: ModelPricing,
@@ -998,6 +1035,7 @@ async fn models(
         .map(|model| ModelOption {
             id: model.id,
             name: model.name,
+            context_length: model.context_length,
             is_free: model.pricing.is_free(),
         })
         .collect::<Vec<_>>();
@@ -1029,8 +1067,8 @@ async fn stop_when_idle(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiModel, AppState, GenerationState, GenerationStatus, ModelArchitecture, ModelPricing,
-        PollQuery, SourceAccess, SourceQuery, code_challenge, is_url, poll, source,
+        ApiModel, AppState, GenerateRequest, GenerationState, GenerationStatus, ModelArchitecture,
+        ModelPricing, PollQuery, SourceAccess, SourceQuery, code_challenge, is_url, poll, source,
     };
     use axum::extract::{Query, State};
     use axum::http::StatusCode;
@@ -1050,6 +1088,25 @@ mod tests {
         assert!(is_url("https://example.com/repo"));
         assert!(!is_url(r"C:\Users\user\project"));
         assert!(!is_url("/home/user/project"));
+    }
+
+    #[test]
+    fn generation_request_maps_file_options_and_defaults_them_off() {
+        let defaults: GenerateRequest =
+            serde_json::from_str(r#"{"source":"project","model":"provider/model"}"#).unwrap();
+        let default_options = defaults.read_options();
+        assert!(default_options.exclude_gitignored);
+        assert!(!default_options.include_non_text);
+        assert!(!defaults.ignore_big_files);
+
+        let selected: GenerateRequest = serde_json::from_str(
+            r#"{"source":"project","model":"provider/model","include_gitignored":true,"include_non_text":true,"ignore_big_files":true}"#,
+        )
+        .unwrap();
+        let selected_options = selected.read_options();
+        assert!(!selected_options.exclude_gitignored);
+        assert!(selected_options.include_non_text);
+        assert!(selected.ignore_big_files);
     }
 
     #[tokio::test]
@@ -1192,6 +1249,7 @@ mod tests {
         let regular_model = ApiModel {
             id: "example/text-chat".to_owned(),
             name: "Text chat".to_owned(),
+            context_length: Some(32768),
             architecture: ModelArchitecture {
                 input_modalities: vec!["text".to_owned()],
                 output_modalities: vec!["text".to_owned()],
@@ -1203,6 +1261,7 @@ mod tests {
         let multimodal_model = ApiModel {
             id: "example/multimodal-chat".to_owned(),
             name: "Multimodal chat".to_owned(),
+            context_length: None,
             architecture: ModelArchitecture {
                 input_modalities: vec!["text".to_owned(), "image".to_owned()],
                 output_modalities: vec!["text".to_owned()],
@@ -1214,6 +1273,7 @@ mod tests {
         let batch_model = ApiModel {
             id: "example/text-chat:batch".to_owned(),
             name: "Text chat batch".to_owned(),
+            context_length: Some(4096),
             architecture: regular_model.architecture,
             pricing: ModelPricing::default(),
         };

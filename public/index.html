@@ -406,6 +406,10 @@
       white-space: nowrap;
     }
 
+    #model-select:disabled {
+      text-align: center;
+    }
+
     #model-select.web-mode-notice {
       text-align: center;
     }
@@ -686,6 +690,51 @@
       font: inherit;
     }
 
+    .upload-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .upload-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .upload-option input {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      border: 2px solid #fff;
+      border-radius: 3px;
+      background: transparent;
+      display: grid;
+      flex: 0 0 16px;
+      place-content: center;
+      cursor: pointer;
+    }
+
+    .upload-option input::before {
+      width: 4px;
+      height: 8px;
+      border-right: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      content: "";
+      opacity: 0;
+      transform: translateY(-1px) rotate(45deg);
+    }
+
+    .upload-option input:checked::before {
+      opacity: 1;
+    }
+
+    .upload-option input:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 3px;
+    }
+
     .upload-dropzone {
       padding: 24px 16px;
       border: 2px dashed var(--line-color);
@@ -747,7 +796,8 @@
       <div class="page-controls">
         <div class="web-control">
           <span>API: <span id="api-status" aria-live="polite">Loading...</span></span>
-          <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
+          <button class="control-button" id="generation-settings-button" type="button"
+            aria-haspopup="dialog" aria-controls="generation-settings-dialog">Generation Settings</button>
         </div>
         <div class="model-controls">
           <div class="model-picker" id="model-picker">
@@ -774,6 +824,20 @@
         <h2 id="upload-dialog-title">Upload code</h2>
         <button class="control-button" id="upload-close-button" type="button" aria-label="Close upload window">Close</button>
       </div>
+      <div class="upload-options">
+        <label class="upload-option" for="include-gitignored">
+          <input id="include-gitignored" type="checkbox">
+          Include .gitignore items
+        </label>
+        <label class="upload-option" for="include-non-text">
+          <input id="include-non-text" type="checkbox">
+          Include non text files
+        </label>
+        <label class="upload-option" for="ignore-big-files">
+          <input id="ignore-big-files" type="checkbox">
+          Ignore files too large to fit in a model chunk
+        </label>
+      </div>
       <label class="upload-field" for="upload-source">
         Folder path or repository URL
         <input id="upload-source" type="text" placeholder="Select a folder or enter a URL" autocomplete="off">
@@ -783,6 +847,16 @@
       </div>
       <button class="control-button" id="upload-browse-button" type="button">Choose folder</button>
       <span id="upload-picker-status" aria-live="polite"></span>
+    </div>
+  </dialog>
+  <dialog class="upload-dialog" id="generation-settings-dialog" aria-labelledby="generation-settings-title">
+    <div class="upload-panel">
+      <div class="upload-heading">
+        <h2 id="generation-settings-title">Generation Settings</h2>
+        <button class="control-button" id="generation-settings-close-button" type="button"
+          aria-label="Close generation settings">Close</button>
+      </div>
+      <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
     </div>
   </dialog>
   <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
@@ -801,9 +875,10 @@
     const modelMenu = document.getElementById("model-menu");
     const modelOptions = document.getElementById("model-options");
     const authButton = document.getElementById("openrouter-sign-in-button");
+    const generationSettingsButton = document.getElementById("generation-settings-button");
+    const generationSettingsDialog = document.getElementById("generation-settings-dialog");
+    const generationSettingsCloseButton = document.getElementById("generation-settings-close-button");
     const modelControls = document.querySelector(".model-controls");
-    const authButtonParent = authButton.parentNode;
-    const authButtonNextSibling = authButton.nextSibling;
     const modelControlsParent = modelControls.parentNode;
     const modelControlsNextSibling = modelControls.nextSibling;
     const uploadCodeButton = document.getElementById("upload-code-button");
@@ -813,6 +888,9 @@
     const uploadBrowseButton = document.getElementById("upload-browse-button");
     const uploadCloseButton = document.getElementById("upload-close-button");
     const uploadPickerStatus = document.getElementById("upload-picker-status");
+    const includeGitignored = document.getElementById("include-gitignored");
+    const includeNonText = document.getElementById("include-non-text");
+    const ignoreBigFiles = document.getElementById("ignore-big-files");
     const generateButton = document.getElementById("generate-button");
     let lastRenderedGenerationId = null;
     let activeGenerationId = null;
@@ -897,7 +975,6 @@
     let selectedModelId = "";
     const restoreSidebarControls = () => {
       closeModelMenu();
-      authButtonParent.insertBefore(authButton, authButtonNextSibling);
       modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
       pageHeader.replaceChildren(...defaultSidebarNodes);
     };
@@ -942,10 +1019,7 @@
       generateSummaryButton.id = "generate-summary-button";
       generateSummaryButton.type = "button";
       generateSummaryButton.textContent = "Generate node summary";
-      const summaryAuthControl = document.createElement("div");
-      summaryAuthControl.className = "web-control";
-      summaryAuthControl.append(authButton);
-      summaryControls.append(summaryAuthControl, modelControls, generateSummaryButton);
+      summaryControls.append(modelControls, generateSummaryButton);
       const tabButtons = [];
       const setActiveTab = activeTab => {
         for (const button of tabButtons) {
@@ -1062,6 +1136,13 @@
       closeButton.focus();
     };
     uploadCodeButton.addEventListener("click", () => uploadDialog.showModal());
+    generationSettingsButton.addEventListener("click", () => generationSettingsDialog.showModal());
+    generationSettingsCloseButton.addEventListener("click", () => generationSettingsDialog.close());
+    for (const dialog of [uploadDialog, generationSettingsDialog]) {
+      dialog.addEventListener("click", event => {
+        if (event.target === dialog) dialog.close();
+      });
+    }
     const updateUploadButton = () => {
       const source = uploadSource.value.trim();
       uploadCodeButton.textContent = source || "Upload code";
@@ -1140,7 +1221,13 @@
           method: "POST",
           cache: "no-store",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({source, model: selectedModelId})
+          body: JSON.stringify({
+            source,
+            model: selectedModelId,
+            include_gitignored: includeGitignored.checked,
+            include_non_text: includeNonText.checked,
+            ignore_big_files: ignoreBigFiles.checked
+          })
         });
         const body = await response.text();
         let result;
@@ -1191,6 +1278,16 @@
       modelMenu.style.top = `${Math.max(edgeGap, top)}px`;
       modelMenu.style.left = `${left}px`;
     };
+    const modelDisplayName = model => {
+      if (!Number.isSafeInteger(model.context_length) || model.context_length <= 0) {
+        return model.name;
+      }
+      const contextSize = new Intl.NumberFormat(undefined, {
+        notation: "compact",
+        maximumSignificantDigits: 2
+      }).format(model.context_length).toLowerCase();
+      return `${model.name} (${contextSize})`;
+    };
     const renderModels = () => {
       const query = modelSearch.value.trim().toLocaleLowerCase();
       const filtered = availableModels.filter(model =>
@@ -1228,7 +1325,7 @@
           option.role = "option";
           option.dataset.modelId = model.id;
           option.setAttribute("aria-selected", String(model.id === selectedModelId));
-          option.textContent = model.name;
+          option.textContent = modelDisplayName(model);
           option.addEventListener("click", () => {
             selectedModelId = model.id;
             modelSelect.textContent = option.textContent;
@@ -1307,7 +1404,9 @@
         );
         selectedModelId = preferred?.id || availableModels[0]?.id || "";
         const selectedModel = availableModels.find(model => model.id === selectedModelId);
-        modelSelect.textContent = selectedModel?.name || "No models available";
+        modelSelect.textContent = selectedModel
+          ? modelDisplayName(selectedModel)
+          : "No models available";
         modelSelect.disabled = availableModels.length === 0;
         renderModels();
       } catch (error) {
@@ -1718,84 +1817,44 @@
     svg.append(edgeLayer, edgeLabelLayer, nodeLayer);
 
     const nodesById = new Map(graph.nodes.map(node => [node.id, node]));
-    // Keep dragged node positions fixed; ELK's fixed algorithm does not route edges.
-    const routeAroundNodes = (from, to) => {
-      const fromCenter = {x: from.x + from.width / 2, y: from.y + from.height / 2};
-      const toCenter = {x: to.x + to.width / 2, y: to.y + to.height / 2};
-      const clearance = 24;
-      const xChannels = new Set([
-        (fromCenter.x + toCenter.x) / 2,
-        ...graph.nodes.flatMap(node => [node.x - clearance, node.x + node.width + clearance])
-      ]);
-      const yChannels = new Set([
-        (fromCenter.y + toCenter.y) / 2,
-        ...graph.nodes.flatMap(node => [node.y - clearance, node.y + node.height + clearance])
-      ]);
-      const candidates = [];
-      for (const x of xChannels) {
-        const source = {
-          x: x >= fromCenter.x ? from.x + from.width : from.x,
-          y: fromCenter.y
-        };
-        const target = {x: x >= toCenter.x ? to.x + to.width : to.x, y: toCenter.y};
-        candidates.push([source, {x, y: source.y}, {x, y: target.y}, target]);
-      }
-      for (const y of yChannels) {
-        const source = {
-          x: fromCenter.x,
-          y: y >= fromCenter.y ? from.y + from.height : from.y
-        };
-        const target = {x: toCenter.x, y: y >= toCenter.y ? to.y + to.height : to.y};
-        candidates.push([source, {x: source.x, y}, {x: target.x, y}, target]);
-      }
+    const initialNodePositions = new Map(graph.nodes.map(node => [
+      node.id,
+      {x: node.x, y: node.y}
+    ]));
+    const moveRouteEndpoint = (points, node, initialPosition, atStart) => {
+      const deltaX = node.x - initialPosition.x;
+      const deltaY = node.y - initialPosition.y;
+      if (deltaX === 0 && deltaY === 0) return;
 
-      const obstacles = graph.nodes.filter(node => node !== from && node !== to);
-      let selected = null;
-      let fewestCollisions = Infinity;
-      let shortestLength = Infinity;
-      for (const candidate of candidates) {
-        const points = candidate.filter((point, index) =>
-          index === 0 || point.x !== candidate[index - 1].x ||
-            point.y !== candidate[index - 1].y
-        );
-        let collisions = 0;
-        let length = 0;
-        for (let index = 1; index < points.length; index++) {
-          const start = points[index - 1];
-          const end = points[index];
-          length += Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
-          for (const obstacle of obstacles) {
-            const intersects = start.y === end.y
-              ? start.y > obstacle.y && start.y < obstacle.y + obstacle.height &&
-                Math.max(start.x, end.x) > obstacle.x &&
-                Math.min(start.x, end.x) < obstacle.x + obstacle.width
-              : start.x > obstacle.x && start.x < obstacle.x + obstacle.width &&
-                Math.max(start.y, end.y) > obstacle.y &&
-                Math.min(start.y, end.y) < obstacle.y + obstacle.height;
-            if (intersects) collisions++;
-          }
-        }
-        if (collisions < fewestCollisions ||
-          (collisions === fewestCollisions && length < shortestLength)) {
-          selected = points;
-          fewestCollisions = collisions;
-          shortestLength = length;
-        }
-        if (collisions === 0 && length <= shortestLength) {
-          selected = points;
-          shortestLength = length;
-        }
+      const endpointIndex = atStart ? 0 : points.length - 1;
+      const adjacentIndex = atStart ? 1 : points.length - 2;
+      if (adjacentIndex < 0 || adjacentIndex >= points.length) return;
+      const endpoint = points[endpointIndex];
+      const adjacent = points[adjacentIndex];
+      const originalEndpoint = {x: endpoint.x, y: endpoint.y};
+      endpoint.x += deltaX;
+      endpoint.y += deltaY;
+      if (endpoint.x !== adjacent.x && endpoint.y !== adjacent.y) {
+        const corner = originalEndpoint.y === adjacent.y
+          ? {x: endpoint.x, y: adjacent.y}
+          : {x: adjacent.x, y: endpoint.y};
+        points.splice(atStart ? 1 : endpointIndex, 0, corner);
       }
-      return selected;
     };
-    const computeRoutes = () => graph.edges.map(edge => {
+    const computeRoutes = () => graph.edges.map((edge, index) => {
       const from = nodesById.get(edge.from);
       const to = nodesById.get(edge.to);
       if (!from || !to) {
         throw new Error(`Graph edge references an unknown node: ${edge.from} -> ${edge.to}`);
       }
+      const points = elkRoutes[index].filter((point, pointIndex, route) =>
+        pointIndex === 0 || point.x !== route[pointIndex - 1].x ||
+          point.y !== route[pointIndex - 1].y
+      ).map(point => ({...point}));
       if (edge.from === edge.to) return selfLoopRoute(from);
-      return routeAroundNodes(from, to);
+      moveRouteEndpoint(points, from, initialNodePositions.get(edge.from), true);
+      moveRouteEndpoint(points, to, initialNodePositions.get(edge.to), false);
+      return points;
     });
 
     const midpointOfSegmentAtRouteFraction = (points, fraction) => {

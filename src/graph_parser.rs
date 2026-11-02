@@ -10,6 +10,7 @@ pub enum DiagnosticKind {
     Syntax,
     RedundantConnection,
     SourceReference,
+    PartialReference,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +60,14 @@ pub struct Graph {
     pub description: Option<String>,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
+    pub partials: Vec<GraphPartial>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphPartial {
+    pub id: String,
+    pub content: String,
+    pub line_number: usize,
 }
 
 impl GraphDiagnostic {
@@ -83,6 +92,10 @@ enum Token {
     Node {
         id: String,
         declaration: Option<Result<NodeLabel, String>>,
+    },
+    Partial {
+        id: String,
+        content: String,
     },
     Operator {
         syntax: String,
@@ -111,13 +124,29 @@ pub fn validate_with_sources(
     output: &str,
     source_files: &[SourceFile],
 ) -> Result<(), GraphDiagnostic> {
+    validate_with_sources_in_chunk(output, source_files, None)
+}
+
+pub fn validate_with_sources_in_chunk(
+    output: &str,
+    source_files: &[SourceFile],
+    current_chunk: Option<&str>,
+) -> Result<(), GraphDiagnostic> {
     let graph = parse(output)?;
     let source_line_counts = source_files
         .iter()
         .map(|file| (source_file_path(file), file.contents.lines().count()))
         .collect::<HashMap<_, _>>();
+    let partial_ids = graph
+        .partials
+        .iter()
+        .map(|partial| partial.id.as_str())
+        .collect::<HashSet<_>>();
 
     for node in &graph.nodes {
+        if partial_ids.contains(node.id.as_str()) {
+            continue;
+        }
         let (line_number, line) = node_declaration_line(output, &node.id);
         if node.sources.is_empty() {
             return Err(diagnostic(
@@ -166,6 +195,55 @@ pub fn validate_with_sources(
         }
     }
 
+    for partial in &graph.partials {
+        let line = output
+            .lines()
+            .nth(partial.line_number.saturating_sub(1))
+            .unwrap_or("");
+        let Some(current_chunk) = current_chunk else {
+            return Err(diagnostic(
+                DiagnosticKind::PartialReference,
+                partial.line_number,
+                line,
+                "The graph still contains an unresolved partial connection outside chunked generation.",
+                "Replace every `<partial>...</partial>` element with a complete graph node or remove it.",
+            ));
+        };
+        if partial.content.is_empty() || !current_chunk.contains(&partial.content) {
+            return Err(diagnostic(
+                DiagnosticKind::PartialReference,
+                partial.line_number,
+                line,
+                &format!(
+                    "Partial connection `{}` does not match code in the current chunk.",
+                    partial.content
+                ),
+                "Use the exact invocation line from the current chunk inside `<partial>...</partial>`.",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn validate_no_partials(output: &str) -> Result<(), GraphDiagnostic> {
+    let graph = parse(output)?;
+    if let Some(partial) = graph.partials.first() {
+        let line = output
+            .lines()
+            .nth(partial.line_number.saturating_sub(1))
+            .unwrap_or("");
+        return Err(diagnostic(
+            DiagnosticKind::PartialReference,
+            partial.line_number,
+            line,
+            &format!(
+                "Partial connection `{}` remains after the last repository chunk.",
+                partial.content
+            ),
+            "There is no more code to inspect; remove the partial element or transform it into a complete graph node and connection.",
+        ));
+    }
     Ok(())
 }
 
@@ -178,6 +256,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
     let mut graph_description = None;
     let mut declarations = HashSet::new();
     let mut nodes = Vec::new();
+    let mut partials = Vec::new();
     let mut connections = HashSet::new();
     let mut parsed_connections = Vec::new();
     let mut graph_edges = Vec::new();
@@ -250,7 +329,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
             ));
         }
 
-        let tokens = tokenize_line(line).map_err(|explanation| {
+        let tokens = tokenize_line(line, line_number).map_err(|explanation| {
             diagnostic(
                 DiagnosticKind::Syntax,
                 line_number,
@@ -261,55 +340,81 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
         })?;
 
         for token in &tokens {
-            if let Token::Node { id, declaration } = token {
-                if !is_valid_node_id(id) {
-                    return Err(diagnostic(
-                        DiagnosticKind::Syntax,
-                        line_number,
-                        raw_line,
-                        &format!("Node ID `{id}` is not a valid identifier."),
-                        "Use a unique UpperCamelCase ID containing only letters and digits; do not use the reserved ID `end`.",
-                    ));
-                }
-                if let Some(label_result) = declaration {
-                    let label = label_result.as_ref().map_err(|explanation| {
-                        diagnostic(
+            match token {
+                Token::Node { id, declaration } => {
+                    if !is_valid_node_id(id) {
+                        return Err(diagnostic(
                             DiagnosticKind::Syntax,
                             line_number,
                             raw_line,
-                            explanation,
-                            "Include a complete `<name>...</name>` tag, a complete `<desc>...</desc>` tag, or both in that order.",
-                        )
-                    })?;
+                            &format!("Node ID `{id}` is not a valid identifier."),
+                            "Use a unique UpperCamelCase ID containing only letters and digits; do not use the reserved ID `end`.",
+                        ));
+                    }
+                    if let Some(label_result) = declaration {
+                        let label = label_result.as_ref().map_err(|explanation| {
+                            diagnostic(
+                                DiagnosticKind::Syntax,
+                                line_number,
+                                raw_line,
+                                explanation,
+                                "Include a complete `<name>...</name>` tag, a complete `<desc>...</desc>` tag, or both in that order.",
+                            )
+                        })?;
+                        if !declarations.insert(id.clone()) {
+                            return Err(diagnostic(
+                                DiagnosticKind::Syntax,
+                                line_number,
+                                raw_line,
+                                &format!("Node `{id}` is declared more than once."),
+                                "Declare each node ID once, then refer to it by ID in connections.",
+                            ));
+                        }
+                        nodes.push(GraphNode {
+                            id: id.clone(),
+                            name: label.name.clone(),
+                            description: label.description.clone(),
+                            sources: label.sources.clone(),
+                        });
+                    }
+                }
+                Token::Partial { id, content } => {
                     if !declarations.insert(id.clone()) {
                         return Err(diagnostic(
                             DiagnosticKind::Syntax,
                             line_number,
                             raw_line,
-                            &format!("Node `{id}` is declared more than once."),
-                            "Declare each node ID once, then refer to it by ID in connections.",
+                            "A partial marker ID is duplicated.",
+                            "Give every partial marker its own position in the graph.",
                         ));
                     }
                     nodes.push(GraphNode {
                         id: id.clone(),
-                        name: label.name.clone(),
-                        description: label.description.clone(),
-                        sources: label.sources.clone(),
+                        name: Some("Unresolved partial connection".to_owned()),
+                        description: Some(content.clone()),
+                        sources: Vec::new(),
+                    });
+                    partials.push(GraphPartial {
+                        id: id.clone(),
+                        content: content.clone(),
+                        line_number,
                     });
                 }
+                Token::Operator { .. } => {}
             }
         }
 
-        let mut previous_node: Option<&str> = None;
-        let mut previous_operator: Option<(&str, &str)> = None;
+        let mut previous_node: Option<String> = None;
+        let mut previous_operator: Option<(String, String)> = None;
         let mut line_edges = Vec::new();
         for token in &tokens {
             match token {
-                Token::Node { id, .. } => {
+                Token::Node { id, .. } | Token::Partial { id, .. } => {
                     if let Some((syntax, label)) = previous_operator {
-                        let from =
-                            previous_node.expect("operator validation requires a source node");
-                        let connection = canonical_connection(from, id, syntax, label);
+                        let from = previous_node
+                            .as_deref()
+                            .expect("operator validation requires a source node");
+                        let connection = canonical_connection(from, id, &syntax, &label);
                         if !connections.insert(connection.clone()) {
                             return Err(diagnostic(
                                 DiagnosticKind::RedundantConnection,
@@ -323,7 +428,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                             connection,
                             line_number,
                         });
-                        let (edge_from, edge_to) = if matches!(syntax, "<--" | "<-.-") {
+                        let (edge_from, edge_to) = if matches!(syntax.as_str(), "<--" | "<-.-") {
                             (id.as_str(), from)
                         } else {
                             (from, id.as_str())
@@ -333,11 +438,11 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                             to: edge_to.to_owned(),
                             label: label.to_owned(),
                             dotted: syntax.contains('.'),
-                            arrow_start: matches!(syntax, "<-->" | "<-.->"),
-                            arrow_end: !matches!(syntax, "---" | "-.-"),
+                            arrow_start: matches!(syntax.as_str(), "<-->" | "<-.->"),
+                            arrow_end: !matches!(syntax.as_str(), "---" | "-.-"),
                         });
                         previous_operator = None;
-                        previous_node = Some(id);
+                        previous_node = Some(id.clone());
                     } else {
                         if previous_node.is_some() {
                             return Err(diagnostic(
@@ -348,7 +453,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                                 "Separate node declarations onto different lines, or add one supported connector between the source and target IDs.",
                             ));
                         }
-                        previous_node = Some(id);
+                        previous_node = Some(id.clone());
                     }
                 }
                 Token::Operator { syntax, label } => {
@@ -361,7 +466,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
                             "Write each connection as `SourceID --> TargetID`, with exactly one source and target node around the connector.",
                         ));
                     }
-                    previous_operator = Some((syntax, label));
+                    previous_operator = Some((syntax.clone(), label.clone()));
                 }
             }
         }
@@ -432,6 +537,7 @@ pub fn parse(output: &str) -> Result<Graph, GraphDiagnostic> {
         description: graph_description,
         nodes,
         edges: graph_edges,
+        partials,
     })
 }
 
@@ -453,7 +559,7 @@ fn node_declaration_line<'a>(output: &'a str, node_id: &str) -> (usize, &'a str)
         .lines()
         .enumerate()
         .find_map(|(index, line)| {
-            let tokens = tokenize_line(line.trim()).ok()?;
+            let tokens = tokenize_line(line.trim(), index + 1).ok()?;
             tokens.into_iter().find_map(|token| match token {
                 Token::Node {
                     id,
@@ -552,12 +658,34 @@ fn is_fence(line: &str) -> bool {
     line.starts_with("```")
 }
 
-fn tokenize_line(line: &str) -> Result<Vec<Token>, String> {
+fn tokenize_line(line: &str, line_number: usize) -> Result<Vec<Token>, String> {
     let bytes = line.as_bytes();
     let mut tokens = Vec::new();
     let mut index = 0;
+    let mut partial_index = 0;
 
     while index < bytes.len() {
+        if bytes[index..].starts_with(b"<partial>") {
+            let content_start = index + "<partial>".len();
+            let Some(relative_end) = line[content_start..].find("</partial>") else {
+                return Err("A partial marker opens with `<partial>` but is not closed.".to_owned());
+            };
+            let content_end = content_start + relative_end;
+            let content = line[content_start..content_end].trim().to_owned();
+            tokens.push(Token::Partial {
+                id: format!("__partial_{line_number}_{partial_index}"),
+                content,
+            });
+            partial_index += 1;
+            index = content_end + "</partial>".len();
+            continue;
+        }
+        if bytes[index..].starts_with(b"</partial>") || bytes[index..].starts_with(b"<partial") {
+            return Err(
+                "A partial marker tag is malformed or has no matching opening tag.".to_owned(),
+            );
+        }
+
         if let Some((operator, length)) = read_operator(&bytes[index..]) {
             let syntax = operator.to_owned();
             index += length;
@@ -1023,6 +1151,53 @@ Node["<name>Node</name>"]
             error
                 .explanation
                 .contains("does not have a source reference")
+        );
+    }
+
+    #[test]
+    fn parses_partial_connections_as_temporary_graph_endpoints() {
+        let graph = r#"<graph type="TD">
+Alpha["<name>Alpha</name><source>main.rs:full</source>"] --> <partial>1 call()</partial>
+</graph>"#;
+
+        let parsed = parse(graph).unwrap();
+        assert_eq!(parsed.partials.len(), 1);
+        assert_eq!(parsed.partials[0].content, "1 call()");
+        assert_eq!(parsed.edges.len(), 1);
+        assert_eq!(parsed.edges[0].to, parsed.partials[0].id);
+    }
+
+    #[test]
+    fn validates_partial_lines_against_the_current_chunk() {
+        let files = [source_file("", "main", "rs", "call()\n")];
+        let graph = r#"<graph type="TD">
+Alpha["<name>Alpha</name><source>main.rs:full</source>"] --> <partial>1 call()</partial>
+</graph>"#;
+        let current_chunk = "``` main.rs\n1 call()\n```\n\n";
+
+        assert_eq!(
+            validate_with_sources_in_chunk(graph, &files, Some(current_chunk)),
+            Ok(())
+        );
+        let error =
+            validate_with_sources_in_chunk(graph, &files, Some("different code")).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::PartialReference);
+    }
+
+    #[test]
+    fn rejects_partial_elements_in_complete_graph_validation() {
+        let files = [source_file("", "main", "rs", "call()\n")];
+        let graph = r#"<graph type="TD">
+Alpha["<name>Alpha</name><source>main.rs:full</source>"] --> <partial>1 call()</partial>
+</graph>"#;
+
+        assert_eq!(
+            validate_with_sources(graph, &files).unwrap_err().kind,
+            DiagnosticKind::PartialReference
+        );
+        assert_eq!(
+            validate_no_partials(graph).unwrap_err().kind,
+            DiagnosticKind::PartialReference
         );
     }
 

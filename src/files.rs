@@ -1,17 +1,32 @@
 //! Recursively collects text files from a directory into the source context sent
-//! to the LLM, with optional exclusions for README and Markdown files.
+//! to the LLM, honoring Git ignore rules and optional README/Markdown exclusions.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use std::collections::HashSet;
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReadOptions {
     pub exclude_readme: bool,
     pub exclude_markdown: bool,
     pub include_non_text: bool,
+    pub exclude_gitignored: bool,
+}
+
+impl Default for ReadOptions {
+    fn default() -> Self {
+        Self {
+            exclude_readme: false,
+            exclude_markdown: false,
+            include_non_text: false,
+            exclude_gitignored: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,24 +94,35 @@ pub fn read_directory_files_with_options(
     options: ReadOptions,
 ) -> io::Result<Vec<SourceFile>> {
     let root = path.as_ref();
+    let mut paths = Vec::new();
+    append_paths(root, &mut paths)?;
+    let ignored = if options.exclude_gitignored {
+        git_ignored_paths(root, &paths)?
+    } else {
+        HashSet::new()
+    };
+
     let mut files = Vec::new();
-    append_directory(root, root, options, &mut files)?;
+    for path in paths {
+        let relative_path = path.strip_prefix(root).unwrap_or(&path);
+        if should_exclude(&path, options) || ignored.contains(&git_path(relative_path)) {
+            continue;
+        }
+        if let Some(file) = read_file(root, &path, options)? {
+            files.push(file);
+        }
+    }
     Ok(files)
 }
 
-fn append_directory(
-    root: &Path,
-    directory: &Path,
-    options: ReadOptions,
-    files: &mut Vec<SourceFile>,
-) -> io::Result<()> {
+fn append_paths(directory: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
     let entries = fs::read_dir(directory).map_err(|error| {
         io::Error::new(
             error.kind(),
             format!("could not read directory {}: {error}", directory.display()),
         )
     })?;
-    let mut paths = entries
+    let mut entries = entries
         .map(|entry| {
             entry.map(|entry| entry.path()).map_err(|error| {
                 io::Error::new(
@@ -109,9 +135,12 @@ fn append_directory(
             })
         })
         .collect::<io::Result<Vec<_>>>()?;
-    paths.sort();
+    entries.sort();
 
-    for path in paths {
+    for path in entries {
+        if path.file_name().is_some_and(|name| name == ".git") {
+            continue;
+        }
         let file_type = fs::symlink_metadata(&path)
             .map_err(|error| {
                 io::Error::new(
@@ -122,17 +151,142 @@ fn append_directory(
             .file_type();
 
         if file_type.is_dir() {
-            append_directory(root, &path, options, files)?;
+            append_paths(&path, paths)?;
         } else if file_type.is_file() {
-            if !should_exclude(&path, options) {
-                if let Some(file) = read_file(root, &path, options)? {
-                    files.push(file);
-                }
-            }
+            paths.push(path);
         }
     }
 
     Ok(())
+}
+
+fn git_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn git_ignored_paths(root: &Path, paths: &[PathBuf]) -> io::Result<HashSet<String>> {
+    if paths.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let mut input = Vec::new();
+    for path in paths {
+        input.extend_from_slice(git_path(path.strip_prefix(root).unwrap_or(path)).as_bytes());
+        input.push(0);
+    }
+
+    let in_git_worktree = is_git_worktree(root)?;
+    let temporary_git_dir = if !in_git_worktree {
+        Some(TemporaryGitDir::new()?)
+    } else {
+        None
+    };
+    let mut command = Command::new("git");
+    if in_git_worktree {
+        command.arg("-C").arg(root);
+    } else if let Some(temporary_git_dir) = &temporary_git_dir {
+        command
+            .arg(format!("--git-dir={}", temporary_git_dir.0.display()))
+            .arg(format!("--work-tree={}", root.display()));
+    }
+    let mut child = command
+        .args(["check-ignore", "--no-index", "--stdin", "-z"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| io::Error::other(format!("could not run git check-ignore: {error}")))?;
+    let mut stdout = child.stdout.take().expect("piped stdout is available");
+    let stdout_reader = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).map(|_| output)
+    });
+    let mut stderr = child.stderr.take().expect("piped stderr is available");
+    let stderr_reader = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        stderr.read_to_end(&mut output).map(|_| output)
+    });
+    let mut stdin = child.stdin.take().expect("piped stdin is available");
+    let write_result = stdin.write_all(&input);
+    drop(stdin);
+    let status = child.wait()?;
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| io::Error::other("git check-ignore output reader panicked"))??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| io::Error::other("git check-ignore error reader panicked"))??;
+    write_result?;
+
+    if !status.success() && status.code() != Some(1) {
+        return Err(io::Error::other(format!(
+            "git check-ignore failed: {}",
+            String::from_utf8_lossy(&stderr).trim()
+        )));
+    }
+    Ok(stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| String::from_utf8_lossy(path).replace('\\', "/"))
+        .collect())
+}
+
+fn is_git_worktree(root: &Path) -> io::Result<bool> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output()
+        .map_err(|error| io::Error::other(format!("could not run git: {error}")))?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    Ok(!path.is_empty())
+}
+
+struct TemporaryGitDir(PathBuf);
+
+impl TemporaryGitDir {
+    fn new() -> io::Result<Self> {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+        let parent = std::env::temp_dir();
+        let path = loop {
+            let candidate = parent.join(format!(
+                "hello-cli-gitignore-{}-{}",
+                std::process::id(),
+                NEXT_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            match fs::create_dir(&candidate) {
+                Ok(()) => break candidate,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        };
+        let git_dir = Self(path);
+        let output = Command::new("git")
+            .args(["init", "--bare", "--quiet"])
+            .arg(&git_dir.0)
+            .output()
+            .map_err(|error| {
+                io::Error::other(format!("could not initialize Git ignore rules: {error}"))
+            })?;
+        if !output.status.success() {
+            return Err(io::Error::other(format!(
+                "could not initialize Git ignore rules: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        Ok(git_dir)
+    }
+}
+
+impl Drop for TemporaryGitDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 fn should_exclude(path: &Path, options: ReadOptions) -> bool {
@@ -253,6 +407,7 @@ mod tests {
                 exclude_readme: true,
                 exclude_markdown: true,
                 include_non_text: false,
+                ..ReadOptions::default()
             },
         )
         .unwrap();
@@ -263,6 +418,64 @@ mod tests {
         assert!(!prompt.contains("other markdown"));
         assert!(!prompt.contains("nested readme"));
         assert!(prompt.contains("keep"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn excludes_git_ignored_files_by_default_and_allows_negated_rules() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("hello-cli-gitignore-{unique}"));
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.join(".gitignore"), "*.log\n").unwrap();
+        fs::write(nested.join(".gitignore"), "*.tmp\n!important.tmp\n").unwrap();
+        fs::write(root.join("ignored.log"), "ignored").unwrap();
+        fs::write(root.join("kept.rs"), "kept").unwrap();
+        fs::write(nested.join("ignored.tmp"), "ignored").unwrap();
+        fs::write(nested.join("important.tmp"), "important").unwrap();
+
+        let files = read_directory_files(&root).unwrap();
+        let paths = files
+            .iter()
+            .map(|file| git_path(&file.relative_path()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            vec![
+                ".gitignore",
+                "kept.rs",
+                "nested/.gitignore",
+                "nested/important.tmp"
+            ]
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn can_include_git_ignored_files_when_filtering_is_disabled() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("hello-cli-gitignore-optout-{unique}"));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join(".gitignore"), "ignored.log\n").unwrap();
+        fs::write(root.join("ignored.log"), "included").unwrap();
+
+        let files = read_directory_files_with_options(
+            &root,
+            ReadOptions {
+                exclude_gitignored: false,
+                ..ReadOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(files.iter().any(|file| file.name == "ignored"));
 
         fs::remove_dir_all(root).unwrap();
     }

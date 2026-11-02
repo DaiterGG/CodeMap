@@ -48,10 +48,13 @@ Options:
       --models     List all OpenRouter model IDs
       --tokens     Count bytes in the numbered source context and exit
       --prompt     Write the initial model request to prompt.txt
+      --response   Write model response history to response.txt
       --gr FILE    Render a custom graph file as HTML and open it in a browser
       --no-readme  Exclude files named README (case-insensitive, any extension)
       --no-md      Exclude Markdown files (.md and .markdown)
+      --gitignore  Include Git-ignored files (disable default filtering)
       --non-txt    Include non-text files as base64-encoded content
+      --ignore-big-files  Skip files exceeding the multi-agent source chunk budget
       --no-browser  Write the response page without opening a browser
       --model ID   OpenRouter model ID (default: liquid/lfm-2.5-2.6b:free)
   -h, --help       Print help
@@ -66,6 +69,7 @@ fn main() {
     let mut models_mode = false;
     let mut tokens_mode = false;
     let mut write_prompt = false;
+    let mut write_response = false;
     let mut test_mode = false;
     let mut model = DEFAULT_MODEL.to_owned();
     let mut model_provided = false;
@@ -73,7 +77,9 @@ fn main() {
     let mut exclude_readme = false;
     let mut exclude_markdown = false;
     let mut include_non_text = false;
-    let mut args = env::args().skip(1);
+    let mut exclude_gitignored = true;
+    let mut ignore_big_files = false;
+    let mut args = normalize_path_argument_args(env::args().skip(1).collect()).into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--no-browser" => open_browser = false,
@@ -82,10 +88,13 @@ fn main() {
             "--models" => models_mode = true,
             "--tokens" => tokens_mode = true,
             "--prompt" => write_prompt = true,
+            "--response" => write_response = true,
             "--test-api" => test_mode = true,
             "--no-readme" => exclude_readme = true,
             "--no-md" => exclude_markdown = true,
+            "--gitignore" => exclude_gitignored = false,
             "--non-txt" => include_non_text = true,
+            "--ignore-big-files" => ignore_big_files = true,
             "--gr" => {
                 let Some(selected) = args.next() else {
                     eprintln!("error: --gr requires a custom graph file\n\n{USAGE}");
@@ -156,13 +165,14 @@ fn main() {
         && (web_mode
             || server_mode
             || tokens_mode
+            || write_response
             || test_mode
             || model_provided
             || graph_path.is_some()
             || path_provided)
     {
         eprintln!(
-            "error: --models cannot be combined with --web, --server, --tokens, --test-api, --model, --gr, or a path\n\n{USAGE}"
+            "error: --models cannot be combined with --web, --server, --tokens, --response, --test-api, --model, --gr, or a path\n\n{USAGE}"
         );
         process::exit(2);
     }
@@ -172,18 +182,31 @@ fn main() {
             || server_mode
             || models_mode
             || write_prompt
+            || write_response
             || test_mode
             || model_provided
             || graph_path.is_some())
     {
         eprintln!(
-            "error: --tokens cannot be combined with --web, --server, --models, --prompt, --test-api, --model, or --gr\n\n{USAGE}"
+            "error: --tokens cannot be combined with --web, --server, --models, --prompt, --response, --test-api, --model, or --gr\n\n{USAGE}"
         );
         process::exit(2);
     }
 
     if model_provided && (web_mode || server_mode) {
         eprintln!("error: --model cannot be used with --web or --server\n\n{USAGE}");
+        process::exit(2);
+    }
+
+    if ignore_big_files && (web_mode || server_mode) {
+        eprintln!(
+            "error: --ignore-big-files cannot be used with --web or --server; set the web checkbox instead\n\n{USAGE}"
+        );
+        process::exit(2);
+    }
+
+    if write_response && (web_mode || server_mode || graph_path.is_some()) {
+        eprintln!("error: --response can only be used during CLI graph generation\n\n{USAGE}");
         process::exit(2);
     }
 
@@ -221,6 +244,7 @@ fn main() {
                 exclude_readme,
                 exclude_markdown,
                 include_non_text,
+                exclude_gitignored,
             },
         ) {
             Ok(files) => files,
@@ -278,6 +302,7 @@ fn main() {
             exclude_readme,
             exclude_markdown,
             include_non_text,
+            exclude_gitignored,
         },
     ) {
         Ok(contents) => contents,
@@ -315,14 +340,15 @@ fn main() {
 
     let mut steps = StepStack::with_files(source_files);
     let initial_prompt = vec![Message::user(hello_cli::prompts::nodegraph())];
-    let output_dir = match hello_cli::page::create_response_history_dir() {
-        Ok(path) => path,
-        Err(error) => {
-            eprintln!("error: could not create response output directory: {error}");
-            process::exit(1);
-        }
-    };
+    let mut output_dir = None;
     if write_prompt {
+        let output_dir = match ensure_response_history_dir(&mut output_dir) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("error: could not create response output directory: {error}");
+                process::exit(1);
+            }
+        };
         let mut messages = steps.context();
         messages.extend(initial_prompt.iter().cloned());
         let prompt_text = format_prompt_messages(&messages);
@@ -332,6 +358,64 @@ fn main() {
             process::exit(1);
         }
     }
+    if let Some(context_length) = llm.context_length()
+        && hello_cli::multiagent::should_use_multiagent(
+            steps
+                .source_files()
+                .expect("generated graph context includes source files"),
+            context_length,
+        )
+    {
+        let generated = match hello_cli::multiagent::generate(
+            llm.as_ref(),
+            steps
+                .source_files()
+                .expect("generated graph context includes source files"),
+            context_length,
+            ignore_big_files,
+        ) {
+            Ok(generated) => generated,
+            Err(error) => {
+                eprintln!("error: multiagent graph generation failed: {error}");
+                process::exit(1);
+            }
+        };
+        let output_dir = match ensure_response_history_dir(&mut output_dir) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("error: could not create response output directory: {error}");
+                process::exit(1);
+            }
+        };
+        let page_path = match hello_cli::page::finalize_response_history_page_with_sources(
+            output_dir,
+            &generated.history,
+            &generated.validation_errors,
+            Some(&path),
+        ) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("error: could not write response page: {error}");
+                process::exit(1);
+            }
+        };
+        if write_response
+            && let Err(error) = hello_cli::page::write_response_history_snapshot(
+                &output_dir,
+                &generated.history,
+                &generated.validation_errors,
+            )
+        {
+            eprintln!("error: could not write response history: {error}");
+            process::exit(1);
+        }
+        if open_browser && let Err(error) = hello_cli::page::open_in_browser(page_path) {
+            eprintln!("error: could not open response page in browser: {error}");
+            process::exit(1);
+        }
+        return;
+    }
+
     let mut step_id = match call_with_retries(&mut steps, llm.as_ref(), initial_prompt) {
         Ok(step_id) => step_id,
         Err(error) => {
@@ -344,13 +428,22 @@ fn main() {
     let mut retries = 0;
     loop {
         validation_errors.push(None);
-        if let Err(error) = hello_cli::page::write_response_history_snapshot(
-            &output_dir,
-            steps.steps(),
-            &validation_errors,
-        ) {
-            eprintln!("error: could not write response history: {error}");
-            process::exit(1);
+        if write_response {
+            let output_dir = match ensure_response_history_dir(&mut output_dir) {
+                Ok(path) => path,
+                Err(error) => {
+                    eprintln!("error: could not create response output directory: {error}");
+                    process::exit(1);
+                }
+            };
+            if let Err(error) = hello_cli::page::write_response_history_snapshot(
+                output_dir,
+                steps.steps(),
+                &validation_errors,
+            ) {
+                eprintln!("error: could not write response history: {error}");
+                process::exit(1);
+            }
         }
 
         let output = &steps.step(step_id).unwrap().response.content;
@@ -369,13 +462,24 @@ fn main() {
                         diagnostic.correction_details()
                     );
                     *validation_errors.last_mut().unwrap() = Some(validation_error.clone());
-                    if let Err(error) = hello_cli::page::write_response_history_snapshot(
-                        &output_dir,
-                        steps.steps(),
-                        &validation_errors,
-                    ) {
-                        eprintln!("error: could not update response history: {error}");
-                        process::exit(1);
+                    if write_response {
+                        let output_dir = match ensure_response_history_dir(&mut output_dir) {
+                            Ok(path) => path,
+                            Err(error) => {
+                                eprintln!(
+                                    "error: could not create response output directory: {error}"
+                                );
+                                process::exit(1);
+                            }
+                        };
+                        if let Err(error) = hello_cli::page::write_response_history_snapshot(
+                            output_dir,
+                            steps.steps(),
+                            &validation_errors,
+                        ) {
+                            eprintln!("error: could not update response history: {error}");
+                            process::exit(1);
+                        }
                     }
                     let prompt = match diagnostic.kind {
                         hello_cli::graph_parser::DiagnosticKind::Syntax => {
@@ -386,6 +490,9 @@ fn main() {
                         }
                         hello_cli::graph_parser::DiagnosticKind::SourceReference => {
                             include_str!("../prompts/source_reference_error.txt")
+                        }
+                        hello_cli::graph_parser::DiagnosticKind::PartialReference => {
+                            include_str!("../prompts/partial_error.txt")
                         }
                     };
                     (
@@ -413,8 +520,15 @@ fn main() {
         retries += 1;
     }
 
+    let output_dir = match ensure_response_history_dir(&mut output_dir) {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("error: could not create response output directory: {error}");
+            process::exit(1);
+        }
+    };
     let page_path = match hello_cli::page::finalize_response_history_page_with_sources(
-        &output_dir,
+        output_dir,
         steps.steps(),
         &validation_errors,
         Some(&path),
@@ -426,10 +540,28 @@ fn main() {
         }
     };
 
+    if write_response
+        && let Err(error) = hello_cli::page::write_response_history_snapshot(
+            output_dir,
+            steps.steps(),
+            &validation_errors,
+        )
+    {
+        eprintln!("error: could not write response history: {error}");
+        process::exit(1);
+    }
+
     if open_browser && let Err(error) = hello_cli::page::open_in_browser(page_path) {
         eprintln!("error: could not open response page in browser: {error}");
         process::exit(1);
     }
+}
+
+fn ensure_response_history_dir(output_dir: &mut Option<PathBuf>) -> std::io::Result<&PathBuf> {
+    if output_dir.is_none() {
+        *output_dir = Some(hello_cli::page::create_response_history_dir()?);
+    }
+    Ok(output_dir.as_ref().expect("response directory was created"))
 }
 
 fn format_prompt_messages(messages: &[Message]) -> String {
@@ -445,9 +577,33 @@ fn format_prompt_messages(messages: &[Message]) -> String {
     output
 }
 
+fn normalize_path_argument_args(args: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::with_capacity(args.len());
+    let mut args = args.into_iter();
+
+    while let Some(arg) = args.next() {
+        normalized.push(arg.clone());
+        if arg != "--path" {
+            continue;
+        }
+
+        let Some(path_arg) = args.next() else {
+            continue;
+        };
+        if let Some((path, trailing_args)) = path_arg.split_once('"') {
+            normalized.push(path.to_owned());
+            normalized.extend(trailing_args.split_whitespace().map(str::to_owned));
+        } else {
+            normalized.push(path_arg);
+        }
+    }
+
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{call_with_retries, format_prompt_messages};
+    use super::{call_with_retries, format_prompt_messages, normalize_path_argument_args};
     use hello_cli::step::{ChatClient, Message, StepStack};
     use std::cell::Cell;
     use std::error::Error;
@@ -510,5 +666,15 @@ mod tests {
     fn correction_prompts_are_distinct() {
         assert!(include_str!("../prompts/syntax_error.txt").contains("syntax"));
         assert!(include_str!("../prompts/redundant_connection.txt").contains("connection"));
+    }
+
+    #[test]
+    fn recovers_path_and_options_after_a_trailing_backslash_escaped_the_quote() {
+        let args = normalize_path_argument_args(vec![
+            "--path".to_owned(),
+            "D:\\dev\\codemap\" --tokens".to_owned(),
+        ]);
+
+        assert_eq!(args, vec!["--path", "D:\\dev\\codemap", "--tokens"]);
     }
 }
