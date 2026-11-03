@@ -447,6 +447,8 @@ struct GenerateRequest {
     include_non_text: bool,
     #[serde(default)]
     ignore_big_files: bool,
+    #[serde(default)]
+    parallel: bool,
 }
 
 impl GenerateRequest {
@@ -496,6 +498,7 @@ async fn generate(
     }
     let read_options = request.read_options();
     let ignore_big_files = request.ignore_big_files;
+    let parallel = request.parallel;
     let model = request.model;
     let user_key = state
         .auth
@@ -539,6 +542,7 @@ async fn generate(
             user_key.as_deref(),
             read_options,
             ignore_big_files,
+            parallel,
         )
         .and_then(|generated| {
             let json = crate::page::serialize_graph_document(&generated.graph)?;
@@ -591,6 +595,7 @@ fn generate_graph(
     user_key: Option<&str>,
     read_options: crate::files::ReadOptions,
     ignore_big_files: bool,
+    parallel: bool,
 ) -> io::Result<GeneratedGraph> {
     let source_files = crate::files::read_directory_files_with_options(path, read_options)?;
     let api_key = match user_key {
@@ -600,12 +605,22 @@ fn generate_graph(
             .ok_or_else(|| io::Error::other("configure OpenRouter authentication first"))?,
     };
     let context_length = crate::llm::model_context_length(model).map_err(io::Error::other)?;
+    if parallel && context_length.is_none() {
+        return Err(io::Error::other(
+            "parallel multi-agent generation requires a model with a known context size",
+        ));
+    }
     let llm = crate::llm::OpenRouter::new(api_key, model).with_context_length(context_length);
     if let Some(context_length) = llm.context_length()
-        && crate::multiagent::should_use_multiagent(&source_files, context_length)
+        && (parallel || crate::multiagent::should_use_multiagent(&source_files, context_length))
     {
-        let generated =
-            crate::multiagent::generate(&llm, &source_files, context_length, ignore_big_files)?;
+        let generated = crate::multiagent::generate_with_mode(
+            &llm,
+            &source_files,
+            context_length,
+            ignore_big_files,
+            parallel,
+        )?;
         return Ok(GeneratedGraph {
             graph: generated.graph,
             source: generated.source,
@@ -1098,15 +1113,17 @@ mod tests {
         assert!(default_options.exclude_gitignored);
         assert!(!default_options.include_non_text);
         assert!(!defaults.ignore_big_files);
+        assert!(!defaults.parallel);
 
         let selected: GenerateRequest = serde_json::from_str(
-            r#"{"source":"project","model":"provider/model","include_gitignored":true,"include_non_text":true,"ignore_big_files":true}"#,
+            r#"{"source":"project","model":"provider/model","include_gitignored":true,"include_non_text":true,"ignore_big_files":true,"parallel":true}"#,
         )
         .unwrap();
         let selected_options = selected.read_options();
         assert!(!selected_options.exclude_gitignored);
         assert!(selected_options.include_non_text);
         assert!(selected.ignore_big_files);
+        assert!(selected.parallel);
     }
 
     #[tokio::test]

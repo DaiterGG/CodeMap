@@ -5,7 +5,7 @@ use crate::files::{SourceFile, format_source_files};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-pub trait ChatClient {
+pub trait ChatClient: Sync {
     fn complete(&self, messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>>;
 
     fn context_length(&self) -> Option<usize> {

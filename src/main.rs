@@ -55,6 +55,7 @@ Options:
       --gitignore  Include Git-ignored files (disable default filtering)
       --non-txt    Include non-text files as base64-encoded content
       --ignore-big-files  Skip files exceeding the multi-agent source chunk budget
+      --parallel   Generate multi-agent chunks in parallel
       --no-browser  Write the response page without opening a browser
       --model ID   OpenRouter model ID (default: liquid/lfm-2.5-2.6b:free)
   -h, --help       Print help
@@ -79,6 +80,7 @@ fn main() {
     let mut include_non_text = false;
     let mut exclude_gitignored = true;
     let mut ignore_big_files = false;
+    let mut parallel = false;
     let mut args = normalize_path_argument_args(env::args().skip(1).collect()).into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -95,6 +97,7 @@ fn main() {
             "--gitignore" => exclude_gitignored = false,
             "--non-txt" => include_non_text = true,
             "--ignore-big-files" => ignore_big_files = true,
+            "--parallel" => parallel = true,
             "--gr" => {
                 let Some(selected) = args.next() else {
                     eprintln!("error: --gr requires a custom graph file\n\n{USAGE}");
@@ -167,12 +170,13 @@ fn main() {
             || tokens_mode
             || write_response
             || test_mode
+            || parallel
             || model_provided
             || graph_path.is_some()
             || path_provided)
     {
         eprintln!(
-            "error: --models cannot be combined with --web, --server, --tokens, --response, --test-api, --model, --gr, or a path\n\n{USAGE}"
+            "error: --models cannot be combined with --web, --server, --tokens, --response, --test-api, --parallel, --model, --gr, or a path\n\n{USAGE}"
         );
         process::exit(2);
     }
@@ -184,11 +188,12 @@ fn main() {
             || write_prompt
             || write_response
             || test_mode
+            || parallel
             || model_provided
             || graph_path.is_some())
     {
         eprintln!(
-            "error: --tokens cannot be combined with --web, --server, --models, --prompt, --response, --test-api, --model, or --gr\n\n{USAGE}"
+            "error: --tokens cannot be combined with --web, --server, --models, --prompt, --response, --test-api, --parallel, --model, or --gr\n\n{USAGE}"
         );
         process::exit(2);
     }
@@ -202,6 +207,18 @@ fn main() {
         eprintln!(
             "error: --ignore-big-files cannot be used with --web or --server; set the web checkbox instead\n\n{USAGE}"
         );
+        process::exit(2);
+    }
+
+    if parallel && (web_mode || server_mode) {
+        eprintln!(
+            "error: --parallel cannot be used with --web or --server; set the web checkbox instead\n\n{USAGE}"
+        );
+        process::exit(2);
+    }
+
+    if parallel && graph_path.is_some() {
+        eprintln!("error: --parallel cannot be used with --gr\n\n{USAGE}");
         process::exit(2);
     }
 
@@ -338,6 +355,11 @@ fn main() {
         Box::new(llm.with_context_length(context_length))
     };
 
+    if parallel && llm.context_length().is_none() {
+        eprintln!("error: --parallel requires a model with a known context size");
+        process::exit(1);
+    }
+
     let mut steps = StepStack::with_files(source_files);
     let initial_prompt = vec![Message::user(hello_cli::prompts::nodegraph())];
     let mut output_dir = None;
@@ -359,20 +381,22 @@ fn main() {
         }
     }
     if let Some(context_length) = llm.context_length()
-        && hello_cli::multiagent::should_use_multiagent(
-            steps
-                .source_files()
-                .expect("generated graph context includes source files"),
-            context_length,
-        )
+        && (parallel
+            || hello_cli::multiagent::should_use_multiagent(
+                steps
+                    .source_files()
+                    .expect("generated graph context includes source files"),
+                context_length,
+            ))
     {
-        let generated = match hello_cli::multiagent::generate(
+        let generated = match hello_cli::multiagent::generate_with_mode(
             llm.as_ref(),
             steps
                 .source_files()
                 .expect("generated graph context includes source files"),
             context_length,
             ignore_big_files,
+            parallel,
         ) {
             Ok(generated) => generated,
             Err(error) => {
@@ -605,18 +629,19 @@ fn normalize_path_argument_args(args: Vec<String>) -> Vec<String> {
 mod tests {
     use super::{call_with_retries, format_prompt_messages, normalize_path_argument_args};
     use hello_cli::step::{ChatClient, Message, StepStack};
-    use std::cell::Cell;
     use std::error::Error;
+    use std::sync::Mutex;
 
     struct FailsThenSucceeds {
-        failures_left: Cell<usize>,
+        failures_left: Mutex<usize>,
     }
 
     impl ChatClient for FailsThenSucceeds {
         fn complete(&self, _messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>> {
-            let failures_left = self.failures_left.get();
+            let mut remaining = self.failures_left.lock().unwrap();
+            let failures_left = *remaining;
             if failures_left > 0 {
-                self.failures_left.set(failures_left - 1);
+                *remaining = failures_left - 1;
                 return Err("temporary model error".into());
             }
             Ok(Message::assistant("response"))
@@ -626,7 +651,7 @@ mod tests {
     #[test]
     fn retries_failed_model_calls_until_success() {
         let llm = FailsThenSucceeds {
-            failures_left: Cell::new(1),
+            failures_left: Mutex::new(1),
         };
         let mut steps = StepStack::new("system");
 
@@ -637,7 +662,7 @@ mod tests {
     #[test]
     fn reports_the_model_error_after_exhausting_retries() {
         let llm = FailsThenSucceeds {
-            failures_left: Cell::new(usize::MAX),
+            failures_left: Mutex::new(usize::MAX),
         };
         let mut steps = StepStack::new("system");
 

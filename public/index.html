@@ -856,6 +856,10 @@
         <button class="control-button" id="generation-settings-close-button" type="button"
           aria-label="Close generation settings">Close</button>
       </div>
+      <label class="upload-option" for="parallel-generation">
+        <input id="parallel-generation" type="checkbox">
+        Run multi-agent chunks in parallel
+      </label>
       <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
     </div>
   </dialog>
@@ -882,6 +886,7 @@
     const generationSettingsButton = document.getElementById("generation-settings-button");
     const generationSettingsDialog = document.getElementById("generation-settings-dialog");
     const generationSettingsCloseButton = document.getElementById("generation-settings-close-button");
+    const parallelGeneration = document.getElementById("parallel-generation");
     const modelControls = document.querySelector(".model-controls");
     const modelControlsParent = modelControls.parentNode;
     const modelControlsNextSibling = modelControls.nextSibling;
@@ -1230,7 +1235,8 @@
             model: selectedModelId,
             include_gitignored: includeGitignored.checked,
             include_non_text: includeNonText.checked,
-            ignore_big_files: ignoreBigFiles.checked
+            ignore_big_files: ignoreBigFiles.checked,
+            parallel: parallelGeneration.checked
           })
         });
         const body = await response.text();
@@ -1602,7 +1608,7 @@
     let activeRoutingSession = null;
 
     const layoutGraphWithElk = async graph => {
-      if (graph.nodes.length === 0) return;
+      if (graph.nodes.length === 0) return [];
       const nodeIds = new Set(graph.nodes.map(node => node.id));
       const elkEdges = graph.edges.map((edge, index) => {
         if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
@@ -1726,7 +1732,13 @@
         edges: routingEdges
       }, {
         routingType: "orthogonal",
-        shapeBufferDistance: 8
+        shapeBufferDistance: 8,
+        crossingPenalty: 100,
+        idealNudgingDistance: 12,
+        nudgeOrthogonalSegmentsConnectedToShapes: true,
+        nudgeOrthogonalTouchingColinearSegments: true,
+        performUnifyingNudgingPreprocessingStep: true,
+        nudgeSharedPathsWithCommonEndPoint: true
       });
       try {
         latestRoutes = nextRoutingSession.processTransaction();
@@ -1871,7 +1883,7 @@
       return [route.sourcePoint, ...route.bendPoints, route.targetPoint];
     });
 
-    const midpointOfSegmentAtRouteFraction = (points, fraction) => {
+    const positionAtRouteFraction = (points, fraction) => {
       const lengths = points.slice(1).map((point, index) =>
         Math.hypot(point.x - points[index].x, point.y - points[index].y)
       );
@@ -1880,24 +1892,27 @@
       for (let index = 0; index < lengths.length; index++) {
         const length = lengths[index];
         if (length > 0 && traversed + length >= targetLength) {
+          const start = points[index];
+          const end = points[index + 1];
+          const segmentFraction = (targetLength - traversed) / length;
           return {
-            x: (points[index].x + points[index + 1].x) / 2,
-            y: (points[index].y + points[index + 1].y) / 2,
-            horizontal: points[index].y === points[index + 1].y,
+            x: start.x + (end.x - start.x) * segmentFraction,
+            y: start.y + (end.y - start.y) * segmentFraction,
+            horizontal: start.y === end.y,
             segmentIndex: index
           };
         }
         traversed += length;
       }
-      return midpointOfSegment(points, Math.max(0, points.length - 2));
+      const lastIndex = points.length - 2;
+      const last = points[lastIndex + 1];
+      return {
+        x: last.x,
+        y: last.y,
+        horizontal: points[lastIndex].y === last.y,
+        segmentIndex: lastIndex
+      };
     };
-
-    const midpointOfSegment = (points, index) => ({
-      x: (points[index].x + points[index + 1].x) / 2,
-      y: (points[index].y + points[index + 1].y) / 2,
-      horizontal: points[index].y === points[index + 1].y,
-      segmentIndex: index
-    });
 
     const positionLabel = (labelText, position) => {
       labelText.setAttribute("x", position.x);
@@ -2094,24 +2109,10 @@
         path.setAttribute("d", roundedRoutePath(visiblePoints));
         if (labelText && labelBackground) {
           const labelFraction = edge.arrow_start !== edge.arrow_end ? 3 / 4 : 1 / 2;
-          const initialPosition = midpointOfSegmentAtRouteFraction(visiblePoints, labelFraction);
-          const segmentIndices = [
-            initialPosition.segmentIndex,
-            initialPosition.segmentIndex + 1,
-            initialPosition.segmentIndex - 1
-          ].filter(segmentIndex => {
-            if (segmentIndex < 0 || segmentIndex >= visiblePoints.length - 1) return false;
-            const start = visiblePoints[segmentIndex];
-            const end = visiblePoints[segmentIndex + 1];
-            return start.x !== end.x || start.y !== end.y;
-          });
-          let selectedPosition = null;
+          let selectedPosition = positionAtRouteFraction(visiblePoints, labelFraction);
           let selectedBounds = null;
           let leastOverlap = Infinity;
-          for (const [candidateIndex, segmentIndex] of segmentIndices.entries()) {
-            const position = candidateIndex === 0
-              ? initialPosition
-              : midpointOfSegment(visiblePoints, segmentIndex);
+          const scorePosition = position => {
             const bounds = positionLabel(labelText, position);
             const overlap = occupiedBounds.reduce(
               (total, previous) => total + overlapArea(bounds, previous),
@@ -2122,7 +2123,24 @@
               selectedBounds = bounds;
               leastOverlap = overlap;
             }
-            if (overlap === 0) break;
+            return overlap;
+          };
+          let foundFreePosition = scorePosition(selectedPosition) === 0;
+          let intervals = [[0, labelFraction], [labelFraction, 1]];
+          for (let depth = 0; depth < 5 && !foundFreePosition; depth++) {
+            const nextIntervals = [];
+            for (const [start, end] of intervals) {
+              const fraction = (start + end) / 2;
+              const position = positionAtRouteFraction(visiblePoints, fraction);
+              if (scorePosition(position) === 0) {
+                selectedPosition = position;
+                selectedBounds = positionLabel(labelText, position);
+                foundFreePosition = true;
+                break;
+              }
+              nextIntervals.push([start, fraction], [fraction, end]);
+            }
+            intervals = nextIntervals;
           }
           if (selectedPosition && selectedBounds) {
             positionLabel(labelText, selectedPosition);

@@ -463,6 +463,8 @@ Process -.->|optional| Output
         assert!(html.contains("id=\"include-non-text\" type=\"checkbox\""));
         assert!(html.contains("id=\"ignore-big-files\" type=\"checkbox\""));
         assert!(html.contains("ignore_big_files: ignoreBigFiles.checked"));
+        assert!(html.contains("id=\"parallel-generation\" type=\"checkbox\""));
+        assert!(html.contains("parallel: parallelGeneration.checked"));
         assert!(html.contains("id=\"openrouter-sign-in-button\""));
     }
 
@@ -487,6 +489,12 @@ Process -.->|optional| Output
         assert!(html.contains("elk.edgeRouting"));
         assert!(html.contains("createRoutingSession"));
         assert!(html.contains("routingType: \"orthogonal\""));
+        assert!(html.contains("crossingPenalty: 100"));
+        assert!(html.contains("idealNudgingDistance: 12"));
+        assert!(html.contains("nudgeOrthogonalSegmentsConnectedToShapes: true"));
+        assert!(html.contains("nudgeOrthogonalTouchingColinearSegments: true"));
+        assert!(html.contains("performUnifyingNudgingPreprocessingStep: true"));
+        assert!(html.contains("nudgeSharedPathsWithCommonEndPoint: true"));
         assert!(html.contains("activeRoutingSession.moveNode"));
         assert!(html.contains("data:application/wasm;base64,"));
         assert!(!html.contains(ELK_JS_MARKER));

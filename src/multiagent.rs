@@ -1,16 +1,24 @@
-//! Generates oversized repository graphs from sequential file and line chunks.
+//! Generates oversized repository graphs from file and line chunks.
 
 use crate::files::{SourceFile, format_source_files};
 use crate::graph_parser::{self, DiagnosticKind, Graph};
 use crate::step::{ChatClient, Message, Step, StepId};
 use std::io;
+use std::thread;
 
 const CHUNK_CONTEXT_PERCENT: usize = 80;
 const MAX_RETRIES: usize = 3;
 const NODEGRAPH_PROMPT: &str = include_str!("../prompts/nodegraph.txt");
 const START_PROMPT: &str = include_str!("../prompts/multiagent_start.txt");
 const SEQUENTIAL_PROMPT: &str = include_str!("../prompts/multiagent_sequential.txt");
+const PARALLEL_PROMPT: &str = include_str!("../prompts/multiagent_parallel.txt");
 const SEGMENT_PROMPT: &str = "A file may be provided as a segment. Its displayed line numbers are the original file line numbers; preserve those numbers in source references and do not assume the segment begins at line 1.";
+
+struct ChunkGeneration {
+    response: Message,
+    history: Vec<Step>,
+    validation_errors: Vec<Option<String>>,
+}
 
 pub struct GeneratedGraph {
     pub graph: Graph,
@@ -28,6 +36,16 @@ pub fn generate(
     source_files: &[SourceFile],
     context_length: usize,
     ignore_big_files: bool,
+) -> io::Result<GeneratedGraph> {
+    generate_with_mode(llm, source_files, context_length, ignore_big_files, false)
+}
+
+pub fn generate_with_mode(
+    llm: &dyn ChatClient,
+    source_files: &[SourceFile],
+    context_length: usize,
+    ignore_big_files: bool,
+    parallel: bool,
 ) -> io::Result<GeneratedGraph> {
     if context_length == 0 {
         return Err(io::Error::other(
@@ -50,93 +68,83 @@ pub fn generate(
         chunks.len()
     );
 
+    let chunk_generations = if parallel {
+        generate_chunks_parallel(llm, source_files, &chunks, context_length)?
+    } else {
+        let mut generated = Vec::with_capacity(chunks.len());
+        let mut previous_agent = None;
+        for (index, chunk) in chunks.iter().enumerate() {
+            let result = generate_chunk(
+                llm,
+                source_files,
+                chunk,
+                previous_agent.as_ref(),
+                index + 1,
+                chunks.len(),
+                context_length,
+            )?;
+            previous_agent = Some(result.response.clone());
+            generated.push(result);
+        }
+        generated
+    };
+
     let mut history = Vec::new();
     let mut validation_errors = Vec::new();
-    let mut previous_agent: Option<Message> = None;
-    let mut final_chunk = String::new();
-    let mut final_response = None;
-
-    for (chunk_offset, chunk_text) in chunks.iter().enumerate() {
-        let chunk_index = chunk_offset + 1;
-        eprintln!(
-            "multiagent: processing chunk {chunk_index}/{}",
-            chunks.len()
-        );
-        let mut last_attempt: Option<(Message, String)> = None;
-        let mut valid_response = None;
-
-        for correction_attempt in 0..=MAX_RETRIES {
-            let mut messages = base_messages(&chunk_text, previous_agent.as_ref());
-            if let Some((failed_response, correction)) = &last_attempt {
-                messages.push(format_previous_agent(failed_response));
-                messages.push(Message::user(correction));
-            }
-
-            log_step(
-                history.len() + 1,
-                chunk_index,
-                chunks.len(),
-                chunk_text.len(),
-                context_length,
-            );
-            let response = complete_with_retries(llm, &messages)?;
-            let validation = graph_parser::validate_with_sources_in_chunk(
-                &response.content,
-                source_files,
-                Some(&chunk_text),
-            );
-            history.push(step_from_messages(
-                &messages,
-                response.clone(),
-                history.len(),
-            ));
-
-            match validation {
-                Ok(()) => {
-                    validation_errors.push(None);
-                    valid_response = Some(response);
-                    break;
-                }
-                Err(diagnostic) => {
-                    let error = format!(
-                        "Graph validation failed ({:?}):\n{}",
-                        diagnostic.kind,
-                        diagnostic.correction_details()
-                    );
-                    validation_errors.push(Some(error.clone()));
-                    if correction_attempt == MAX_RETRIES {
-                        eprintln!(
-                            "multiagent: chunk {chunk_index}/{} still fails graph validation after {MAX_RETRIES} corrections:\n{error}",
-                            chunks.len()
-                        );
-                        return Err(io::Error::other(format!(
-                            "could not generate a valid graph after {MAX_RETRIES} corrections: {error}"
-                        )));
-                    }
-                    eprintln!(
-                        "multiagent: chunk {chunk_index}/{} failed graph validation; retrying the same chunk with correction {}/{}:\n{error}",
-                        chunks.len(),
-                        correction_attempt + 1,
-                        MAX_RETRIES
-                    );
-                    last_attempt = Some((response, correction_for(&diagnostic)));
-                }
-            }
+    for generation in &chunk_generations {
+        for mut step in generation.history.iter().cloned() {
+            step.id = StepId(history.len());
+            history.push(step);
         }
-
-        let response = valid_response
-            .ok_or_else(|| io::Error::other("chunk generation ended without a valid graph"))?;
-        final_chunk = chunk_text.clone();
-        previous_agent = Some(response.clone());
-        final_response = Some(response);
+        validation_errors.extend(generation.validation_errors.iter().cloned());
     }
 
-    let mut response = final_response.ok_or_else(|| {
-        io::Error::other("cannot generate a chunked graph from a repository with no source files")
-    })?;
+    let final_chunk = chunks
+        .last()
+        .expect("chunks are checked to be non-empty")
+        .clone();
+    let mut aggregation_messages = None;
+    let mut response = if parallel {
+        let messages = parallel_aggregation_messages(&chunk_generations);
+        log_step(
+            history.len() + 1,
+            chunks.len() + 1,
+            chunks.len() + 1,
+            messages.iter().map(|message| message.content.len()).sum(),
+            context_length,
+        );
+        let response = complete_with_retries(llm, &messages)?;
+        history.push(step_from_messages(
+            &messages,
+            response.clone(),
+            history.len(),
+        ));
+        aggregation_messages = Some(messages);
+        response
+    } else {
+        chunk_generations
+            .last()
+            .expect("chunks are checked to be non-empty")
+            .response
+            .clone()
+    };
+
+    if parallel {
+        validation_errors.push(
+            graph_validation(&response, source_files)
+                .err()
+                .map(|error| {
+                    format!(
+                        "Final graph validation failed ({:?}):\n{}",
+                        error.kind,
+                        error.correction_details()
+                    )
+                }),
+        );
+    }
+
     for correction_attempt in 0..=MAX_RETRIES {
-        let validation = graph_parser::validate_with_sources(&response.content, source_files)
-            .and_then(|_| graph_parser::validate_no_partials(&response.content));
+        let validation = graph_validation(&response, source_files);
         if validation.is_ok() {
             let graph = graph_parser::parse(&response.content)
                 .map_err(|diagnostic| io::Error::other(diagnostic.correction_details()))?;
@@ -173,7 +181,13 @@ pub fn generate(
             MAX_RETRIES,
             diagnostic.correction_details()
         );
-        let mut messages = base_messages(&final_chunk, Some(&response));
+        let mut messages = if let Some(aggregation_messages) = &aggregation_messages {
+            let mut messages = aggregation_messages.clone();
+            messages.push(format_previous_agent(&response));
+            messages
+        } else {
+            base_messages(&final_chunk, Some(&response))
+        };
         messages.push(Message::user(correction));
         log_step(
             history.len() + 1,
@@ -183,8 +197,7 @@ pub fn generate(
             context_length,
         );
         let corrected = complete_with_retries(llm, &messages)?;
-        let validation = graph_parser::validate_with_sources(&corrected.content, source_files)
-            .and_then(|_| graph_parser::validate_no_partials(&corrected.content));
+        let validation = graph_validation(&corrected, source_files);
         history.push(step_from_messages(
             &messages,
             corrected.clone(),
@@ -201,6 +214,175 @@ pub fn generate(
     }
 
     Err(io::Error::other("final graph validation did not complete"))
+}
+
+fn generate_chunks_parallel(
+    llm: &dyn ChatClient,
+    source_files: &[SourceFile],
+    chunks: &[String],
+    context_length: usize,
+) -> io::Result<Vec<ChunkGeneration>> {
+    thread::scope(|scope| {
+        let handles = chunks
+            .iter()
+            .enumerate()
+            .map(|(index, chunk)| {
+                scope.spawn(move || {
+                    generate_chunk(
+                        llm,
+                        source_files,
+                        chunk,
+                        None,
+                        index + 1,
+                        chunks.len(),
+                        context_length,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut results = Vec::with_capacity(handles.len());
+        let mut first_error = None;
+        for handle in handles {
+            match handle.join() {
+                Ok(Ok(result)) => results.push(Some(result)),
+                Ok(Err(error)) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                    results.push(None);
+                }
+                Err(_) => {
+                    if first_error.is_none() {
+                        first_error = Some(io::Error::other(
+                            "parallel multi-agent chunk worker panicked",
+                        ));
+                    }
+                    results.push(None);
+                }
+            }
+        }
+
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        Ok(results
+            .into_iter()
+            .map(|result| result.expect("successful chunk results are present"))
+            .collect())
+    })
+}
+
+fn generate_chunk(
+    llm: &dyn ChatClient,
+    source_files: &[SourceFile],
+    chunk_text: &str,
+    previous_agent: Option<&Message>,
+    chunk_index: usize,
+    total_chunks: usize,
+    context_length: usize,
+) -> io::Result<ChunkGeneration> {
+    eprintln!("multiagent: processing chunk {chunk_index}/{total_chunks}");
+    let mut history = Vec::new();
+    let mut validation_errors = Vec::new();
+    let mut last_attempt: Option<(Message, String)> = None;
+
+    for correction_attempt in 0..=MAX_RETRIES {
+        let mut messages = base_messages(chunk_text, previous_agent);
+        if let Some((failed_response, correction)) = &last_attempt {
+            messages.push(format_previous_agent(failed_response));
+            messages.push(Message::user(correction));
+        }
+        log_step(
+            chunk_index,
+            chunk_index,
+            total_chunks,
+            chunk_text.len(),
+            context_length,
+        );
+        let response = complete_with_retries(llm, &messages)?;
+        let validation = graph_parser::validate_with_sources_in_chunk(
+            &response.content,
+            source_files,
+            Some(chunk_text),
+        );
+        history.push(step_from_messages(
+            &messages,
+            response.clone(),
+            history.len(),
+        ));
+
+        match validation {
+            Ok(()) => {
+                validation_errors.push(None);
+                return Ok(ChunkGeneration {
+                    response,
+                    history,
+                    validation_errors,
+                });
+            }
+            Err(diagnostic) => {
+                let error = format!(
+                    "Graph validation failed ({:?}):\n{}",
+                    diagnostic.kind,
+                    diagnostic.correction_details()
+                );
+                validation_errors.push(Some(error.clone()));
+                if correction_attempt == MAX_RETRIES {
+                    eprintln!(
+                        "multiagent: chunk {chunk_index}/{total_chunks} still fails graph validation after {MAX_RETRIES} corrections:\n{error}"
+                    );
+                    return Err(io::Error::other(format!(
+                        "could not generate a valid graph after {MAX_RETRIES} corrections: {error}"
+                    )));
+                }
+                eprintln!(
+                    "multiagent: chunk {chunk_index}/{total_chunks} failed graph validation; retrying the same chunk with correction {}/{}:\n{error}",
+                    correction_attempt + 1,
+                    MAX_RETRIES
+                );
+                last_attempt = Some((response, correction_for(&diagnostic)));
+            }
+        }
+    }
+
+    Err(io::Error::other(
+        "chunk generation ended without a valid graph",
+    ))
+}
+
+fn parallel_aggregation_messages(generations: &[ChunkGeneration]) -> Vec<Message> {
+    let mut messages = vec![
+        Message::system(NODEGRAPH_PROMPT),
+        Message::user(SEGMENT_PROMPT),
+        Message::user(START_PROMPT),
+        Message::user(PARALLEL_PROMPT),
+    ];
+    let mut dump = String::new();
+    for (index, generation) in generations.iter().enumerate() {
+        let thought = generation
+            .response
+            .reasoning
+            .as_deref()
+            .unwrap_or("(no reasoning supplied)");
+        dump.push_str(&format!(
+            "Agent {} thought process:\n{}\n\nAgent {} graph output:\n{}\n\n",
+            index + 1,
+            thought,
+            index + 1,
+            generation.response.content
+        ));
+    }
+    messages.push(Message::user(dump));
+    messages
+}
+
+fn graph_validation(
+    response: &Message,
+    source_files: &[SourceFile],
+) -> Result<(), graph_parser::GraphDiagnostic> {
+    graph_parser::validate_with_sources(&response.content, source_files)
+        .and_then(|_| graph_parser::validate_no_partials(&response.content))
 }
 
 fn log_step(
@@ -386,19 +568,60 @@ fn source_file_path(file: &SourceFile) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
     use std::error::Error;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     struct RecordingClient {
-        responses: RefCell<Vec<Message>>,
-        requests: RefCell<Vec<Vec<Message>>>,
+        responses: Mutex<Vec<Message>>,
+        requests: Mutex<Vec<Vec<Message>>>,
     }
 
     impl ChatClient for RecordingClient {
         fn complete(&self, messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>> {
-            self.requests.borrow_mut().push(messages.to_vec());
-            Ok(self.responses.borrow_mut().remove(0))
+            self.requests.lock().unwrap().push(messages.to_vec());
+            Ok(self.responses.lock().unwrap().remove(0))
+        }
+    }
+
+    struct ParallelClient {
+        active: AtomicUsize,
+        max_active: AtomicUsize,
+        requests: Mutex<Vec<Vec<Message>>>,
+    }
+
+    impl ChatClient for ParallelClient {
+        fn complete(&self, messages: &[Message]) -> Result<Message, Box<dyn Error + Send + Sync>> {
+            self.requests.lock().unwrap().push(messages.to_vec());
+            if messages
+                .iter()
+                .any(|message| message.content == PARALLEL_PROMPT)
+            {
+                return Ok(assistant(
+                    r#"<graph type="TD">
+Main["<name>Main</name><source>main.rs:full</source>"]
+Second["<name>Second</name><source>second.rs:full</source>"]
+</graph>"#,
+                ));
+            }
+
+            let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_active.fetch_max(active, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(40));
+            self.active.fetch_sub(1, Ordering::SeqCst);
+
+            let graph = if messages[0].content.contains("main.rs") {
+                r#"<graph type="TD">
+Main["<name>Main</name><source>main.rs:full</source>"]
+</graph>"#
+            } else {
+                r#"<graph type="TD">
+Second["<name>Second</name><source>second.rs:full</source>"]
+</graph>"#
+            };
+            Ok(assistant(graph))
         }
     }
 
@@ -462,12 +685,12 @@ mod tests {
 Large["<name>Large</name><source>large.rs:full</source>"]
 </graph>"#;
         let llm = RecordingClient {
-            responses: RefCell::new(vec![assistant(graph), assistant(graph)]),
-            requests: RefCell::new(Vec::new()),
+            responses: Mutex::new(vec![assistant(graph), assistant(graph)]),
+            requests: Mutex::new(Vec::new()),
         };
 
         generate(&llm, &files, 100, false).unwrap();
-        let requests = llm.requests.borrow();
+        let requests = llm.requests.lock().unwrap();
 
         assert_eq!(requests.len(), 2);
         assert!(requests[0][0].content.contains("1 "));
@@ -525,7 +748,7 @@ Large["<name>Large</name><source>large.rs:full</source>"]
 Main["<name>Main</name><source>main.rs:full</source>"]
 </graph>"#;
         let llm = RecordingClient {
-            responses: RefCell::new(
+            responses: Mutex::new(
                 (0..10)
                     .map(|_| Message {
                         role: crate::step::Role::Assistant,
@@ -534,12 +757,12 @@ Main["<name>Main</name><source>main.rs:full</source>"]
                     })
                     .collect(),
             ),
-            requests: RefCell::new(Vec::new()),
+            requests: Mutex::new(Vec::new()),
         };
 
         assert!(should_use_multiagent(&files, context_length));
         let generated = generate(&llm, &files, context_length, false).unwrap();
-        let requests = llm.requests.borrow();
+        let requests = llm.requests.lock().unwrap();
 
         assert!(requests.len() > 1);
         assert_eq!(generated.history.len(), requests.len());
@@ -548,6 +771,71 @@ Main["<name>Main</name><source>main.rs:full</source>"]
         assert!(requests[1][4].content.contains("reviewed this chunk"));
         assert!(requests[1][4].content.contains(graph));
         assert_eq!(requests[1][5].content, SEQUENTIAL_PROMPT);
+    }
+
+    #[test]
+    fn generates_chunks_concurrently_then_aggregates_all_agent_outputs() {
+        let files = [
+            file("main", &"a".repeat(1500)),
+            file("second", &"b".repeat(1500)),
+        ];
+        let largest_file = files
+            .iter()
+            .map(|file| format_source_files(std::slice::from_ref(file)).len())
+            .max()
+            .unwrap();
+        let context_length = largest_file * 100 / CHUNK_CONTEXT_PERCENT + 10;
+        let llm = ParallelClient {
+            active: AtomicUsize::new(0),
+            max_active: AtomicUsize::new(0),
+            requests: Mutex::new(Vec::new()),
+        };
+
+        let generated = generate_with_mode(&llm, &files, context_length, false, true).unwrap();
+        let requests = llm.requests.lock().unwrap();
+        let chunk_requests = requests
+            .iter()
+            .filter(|messages| {
+                !messages
+                    .iter()
+                    .any(|message| message.content == PARALLEL_PROMPT)
+            })
+            .collect::<Vec<_>>();
+        let aggregation = requests
+            .iter()
+            .find(|messages| {
+                messages
+                    .iter()
+                    .any(|message| message.content == PARALLEL_PROMPT)
+            })
+            .unwrap();
+
+        assert_eq!(chunk_requests.len(), 2);
+        assert_eq!(llm.max_active.load(Ordering::SeqCst), 2);
+        assert_eq!(generated.validation_errors.len(), generated.history.len());
+        assert!(
+            aggregation
+                .iter()
+                .any(|message| message.content == START_PROMPT)
+        );
+        assert!(
+            aggregation
+                .iter()
+                .any(|message| message.content == PARALLEL_PROMPT)
+        );
+        assert!(chunk_requests.iter().all(|messages| messages.len() == 4));
+        assert!(chunk_requests.iter().all(|messages| {
+            messages
+                .iter()
+                .all(|message| message.content != SEQUENTIAL_PROMPT)
+        }));
+        let agent_dump = aggregation.last().unwrap();
+        assert!(agent_dump.content.contains("reviewed this chunk"));
+        assert!(agent_dump.content.contains("Main["));
+        assert!(agent_dump.content.contains("Second["));
+        assert_eq!(generated.history.len(), 3);
+        assert_eq!(generated.graph.nodes.len(), 2);
+        assert!(generated.graph.partials.is_empty());
     }
 
     #[test]
@@ -578,12 +866,12 @@ Main["<name>Main</name><source>main.rs:full</source>"] --> <partial>1 call()</pa
         responses.push(assistant(partial_graph));
         responses.push(assistant(graph));
         let llm = RecordingClient {
-            responses: RefCell::new(responses),
-            requests: RefCell::new(Vec::new()),
+            responses: Mutex::new(responses),
+            requests: Mutex::new(Vec::new()),
         };
 
         let generated = generate(&llm, &files, context_length, false).unwrap();
-        let requests = llm.requests.borrow();
+        let requests = llm.requests.lock().unwrap();
 
         assert!(generated.graph.partials.is_empty());
         assert_eq!(requests.len(), chunk_count + 1);
