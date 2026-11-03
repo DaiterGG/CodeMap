@@ -3,6 +3,8 @@
 
 use crate::graph_parser::{Graph, GraphDirection};
 use crate::step::{Role, Step};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -16,10 +18,18 @@ const GRAPH_JSON_MARKER: &str = "{{GRAPH_JSON}}";
 const SOURCE_JSON_MARKER: &str = "{{SOURCE_JSON}}";
 const ELK_JS_MARKER: &str = "{{ELK_JS}}";
 const ELK_LICENSE_MARKER: &str = "{{ELK_LICENSE}}";
+const LIBAVOID_JS_MARKER: &str = "{{LIBAVOID_JS}}";
+const LIBAVOID_WASM_MARKER: &str = "{{LIBAVOID_WASM}}";
+const LIBAVOID_LICENSE_MARKER: &str = "{{LIBAVOID_LICENSE}}";
+const LIBAVOID_JS_LICENSE_MARKER: &str = "{{LIBAVOID_JS_LICENSE}}";
 const GRAPH_DETAILS_MARKER: &str = "{{GRAPH_DETAILS}}";
 const SERVER_MODE_MARKER: &str = "{{SERVER_MODE}}";
 const HIGHLIGHT_JS_MARKER: &str = "{{HIGHLIGHT_JS}}";
 const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
+const LIBAVOID_JS: &str = include_str!("../public/vendor/elkjs-libavoid.bundled.js");
+const LIBAVOID_WASM: &[u8] = include_bytes!("../public/vendor/libavoid.wasm");
+const LIBAVOID_LICENSE: &str = include_str!("../public/vendor/elkjs-libavoid.LICENSE");
+const LIBAVOID_JS_LICENSE: &str = include_str!("../public/vendor/libavoid-js.LICENSE");
 const NODE_WIDTH: f64 = 210.0;
 const NODE_HEIGHT: f64 = 131.0;
 
@@ -283,6 +293,13 @@ fn render_page_html(
             ELK_LICENSE_MARKER,
             &escape_html(include_str!("../public/vendor/elk.LICENSE")),
         )
+        .replace(LIBAVOID_JS_MARKER, LIBAVOID_JS)
+        .replace(LIBAVOID_WASM_MARKER, &STANDARD.encode(LIBAVOID_WASM))
+        .replace(LIBAVOID_LICENSE_MARKER, &escape_html(LIBAVOID_LICENSE))
+        .replace(
+            LIBAVOID_JS_LICENSE_MARKER,
+            &escape_html(LIBAVOID_JS_LICENSE),
+        )
         .replace(HIGHLIGHT_JS_MARKER, HIGHLIGHT_JS)
         .replace(
             SERVER_MODE_MARKER,
@@ -468,8 +485,16 @@ Process -.->|optional| Output
         let html = render_web_index(false);
         assert!(html.contains("org.eclipse.elk.layered"));
         assert!(html.contains("elk.edgeRouting"));
+        assert!(html.contains("createRoutingSession"));
+        assert!(html.contains("routingType: \"orthogonal\""));
+        assert!(html.contains("activeRoutingSession.moveNode"));
+        assert!(html.contains("data:application/wasm;base64,"));
         assert!(!html.contains(ELK_JS_MARKER));
         assert!(!html.contains(ELK_LICENSE_MARKER));
+        assert!(!html.contains(LIBAVOID_JS_MARKER));
+        assert!(!html.contains(LIBAVOID_WASM_MARKER));
+        assert!(!html.contains(LIBAVOID_LICENSE_MARKER));
+        assert!(!html.contains(LIBAVOID_JS_LICENSE_MARKER));
         assert!(html.contains("Eclipse Public License - v 2.0"));
     }
 

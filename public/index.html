@@ -862,7 +862,11 @@
   <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
   <script type="application/json" id="source-data">{{SOURCE_JSON}}</script>
   <pre hidden id="elk-license">{{ELK_LICENSE}}</pre>
+  <pre hidden id="elkjs-libavoid-license">{{LIBAVOID_LICENSE}}</pre>
+  <pre hidden id="libavoid-js-license">{{LIBAVOID_JS_LICENSE}}</pre>
+  <pre hidden id="libavoid-wasm">{{LIBAVOID_WASM}}</pre>
   <script>{{ELK_JS}}</script>
+  <script>{{LIBAVOID_JS}}</script>
   <script>{{HIGHLIGHT_JS}}</script>
   <script>
     const apiStatus = document.getElementById("api-status");
@@ -1592,9 +1596,13 @@
     };
 
     const elk = new ELK();
+    const libavoidWasmUrl = `data:application/wasm;base64,${
+      document.getElementById("libavoid-wasm").textContent.trim()
+    }`;
+    let activeRoutingSession = null;
 
     const layoutGraphWithElk = async graph => {
-      if (graph.nodes.length === 0) return [];
+      if (graph.nodes.length === 0) return;
       const nodeIds = new Set(graph.nodes.map(node => node.id));
       const elkEdges = graph.edges.map((edge, index) => {
         if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
@@ -1635,20 +1643,6 @@
       }
       graph.width = layout.width;
       graph.height = layout.height;
-      const routes = new Map(layout.edges.map(edge => [edge.id, edge.sections || []]));
-      return graph.edges.map((edge, index) => {
-        const sections = routes.get(`edge-${index}`);
-        const section = sections && sections[0];
-        if (!section) {
-          throw new Error(`ELK did not route graph edge: ${edge.from} -> ${edge.to}`);
-        }
-        const points = [
-          section.startPoint,
-          ...(section.bendPoints || []),
-          section.endPoint
-        ];
-        return edge.arrow_start && !edge.arrow_end ? points.reverse() : points;
-      });
     };
 
     let pollingInterval;
@@ -1696,7 +1690,53 @@
     pollingInterval = window.setInterval(poll, 3_000);
 
     const renderGraph = async graph => {
-    const elkRoutes = await layoutGraphWithElk(graph);
+    const selfLoopRoute = node => {
+      const clearance = 24;
+      const centerX = node.x + node.width / 2;
+      const centerY = node.y + node.height / 2;
+      const outerX = node.x + node.width + clearance;
+      const outerY = node.y - clearance;
+      return [
+        {x: node.x + node.width, y: centerY},
+        {x: outerX, y: centerY},
+        {x: outerX, y: outerY},
+        {x: centerX, y: outerY},
+        {x: centerX, y: node.y}
+      ];
+    };
+    await layoutGraphWithElk(graph);
+    const routingEdges = graph.edges.flatMap((edge, index) =>
+      edge.from === edge.to
+        ? []
+        : [{id: `edge-${index}`, source: edge.from, target: edge.to}]
+    );
+    let nextRoutingSession = null;
+    let latestRoutes = new Map();
+    if (routingEdges.length > 0) {
+      await ElkjsLibavoid.init(libavoidWasmUrl);
+      nextRoutingSession = await ElkjsLibavoid.createRoutingSession({
+        id: "root",
+        children: graph.nodes.map(node => ({
+          id: node.id,
+          x: node.x,
+          y: node.y,
+          width: node.width,
+          height: node.height
+        })),
+        edges: routingEdges
+      }, {
+        routingType: "orthogonal",
+        shapeBufferDistance: 8
+      });
+      try {
+        latestRoutes = nextRoutingSession.processTransaction();
+      } catch (error) {
+        nextRoutingSession.destroy();
+        throw error;
+      }
+    }
+    activeRoutingSession?.destroy();
+    activeRoutingSession = nextRoutingSession;
     svg.replaceChildren();
     graphDetails.replaceChildren();
     if (graph.name) {
@@ -1817,44 +1857,18 @@
     svg.append(edgeLayer, edgeLabelLayer, nodeLayer);
 
     const nodesById = new Map(graph.nodes.map(node => [node.id, node]));
-    const initialNodePositions = new Map(graph.nodes.map(node => [
-      node.id,
-      {x: node.x, y: node.y}
-    ]));
-    const moveRouteEndpoint = (points, node, initialPosition, atStart) => {
-      const deltaX = node.x - initialPosition.x;
-      const deltaY = node.y - initialPosition.y;
-      if (deltaX === 0 && deltaY === 0) return;
-
-      const endpointIndex = atStart ? 0 : points.length - 1;
-      const adjacentIndex = atStart ? 1 : points.length - 2;
-      if (adjacentIndex < 0 || adjacentIndex >= points.length) return;
-      const endpoint = points[endpointIndex];
-      const adjacent = points[adjacentIndex];
-      const originalEndpoint = {x: endpoint.x, y: endpoint.y};
-      endpoint.x += deltaX;
-      endpoint.y += deltaY;
-      if (endpoint.x !== adjacent.x && endpoint.y !== adjacent.y) {
-        const corner = originalEndpoint.y === adjacent.y
-          ? {x: endpoint.x, y: adjacent.y}
-          : {x: adjacent.x, y: endpoint.y};
-        points.splice(atStart ? 1 : endpointIndex, 0, corner);
-      }
-    };
     const computeRoutes = () => graph.edges.map((edge, index) => {
       const from = nodesById.get(edge.from);
       const to = nodesById.get(edge.to);
       if (!from || !to) {
         throw new Error(`Graph edge references an unknown node: ${edge.from} -> ${edge.to}`);
       }
-      const points = elkRoutes[index].filter((point, pointIndex, route) =>
-        pointIndex === 0 || point.x !== route[pointIndex - 1].x ||
-          point.y !== route[pointIndex - 1].y
-      ).map(point => ({...point}));
       if (edge.from === edge.to) return selfLoopRoute(from);
-      moveRouteEndpoint(points, from, initialNodePositions.get(edge.from), true);
-      moveRouteEndpoint(points, to, initialNodePositions.get(edge.to), false);
-      return points;
+      const route = latestRoutes.get(`edge-${index}`);
+      if (!route) {
+        throw new Error(`libavoid did not route graph edge: ${edge.from} -> ${edge.to}`);
+      }
+      return [route.sourcePoint, ...route.bendPoints, route.targetPoint];
     });
 
     const midpointOfSegmentAtRouteFraction = (points, fraction) => {
@@ -1985,21 +1999,6 @@
       return points;
     };
 
-    const selfLoopRoute = node => {
-      const clearance = 24;
-      const centerX = node.x + node.width / 2;
-      const centerY = node.y + node.height / 2;
-      const outerX = node.x + node.width + clearance;
-      const outerY = node.y - clearance;
-      return [
-        {x: node.x + node.width, y: centerY},
-        {x: outerX, y: centerY},
-        {x: outerX, y: outerY},
-        {x: centerX, y: outerY},
-        {x: centerX, y: node.y}
-      ];
-    };
-
     const edgeElements = graph.edges.map(edge => {
       const path = makeSvgElement("path", {
         class: edge.dotted ? "edge dotted" : "edge"
@@ -2034,7 +2033,6 @@
     const dragRouteDelayFactor = 6;
     const hideEdgesDelayThreshold = 100;
     let nextDragRouteAt = 0;
-    let hasMoved = false;
     const scheduleDragRoute = drag => {
       if (drag.routeTimer !== null) return;
       const delay = Math.max(0, nextDragRouteAt - performance.now());
@@ -2043,7 +2041,7 @@
         if (drag.active) updateEdgeRoutes({drag});
       }, delay);
     };
-    const updateEdgeRoutes = ({drag = null, force = false} = {}) => {
+    const updateEdgeRoutes = ({drag = null, force = false, movedNode = null} = {}) => {
       if (drag && !force) {
         if (drag.clientX === drag.lastResolvedClientX &&
           drag.clientY === drag.lastResolvedClientY) {
@@ -2069,7 +2067,12 @@
       }
 
       const startedAt = performance.now();
-      const routes = drag || hasMoved ? computeRoutes() : elkRoutes;
+      const nodeToMove = movedNode || (drag && nodesById.get(drag.nodeId));
+      if (nodeToMove && activeRoutingSession) {
+        activeRoutingSession.moveNode(nodeToMove.id, {x: nodeToMove.x, y: nodeToMove.y});
+        latestRoutes = activeRoutingSession.processTransaction();
+      }
+      const routes = computeRoutes();
       const occupiedBounds = graph.nodes.map(node => ({
         x: node.x,
         y: node.y,
@@ -2314,6 +2317,7 @@
         const bounds = svg.getBoundingClientRect();
         drag = {
           pointerId: event.pointerId,
+          nodeId: node.id,
           clientX: event.clientX,
           clientY: event.clientY,
           scaleX: viewWidth / bounds.width,
@@ -2335,7 +2339,6 @@
         drag.clientY = event.clientY;
         node.x += deltaX;
         node.y += deltaY;
-        hasMoved = true;
         group.setAttribute("transform", `translate(${node.x} ${node.y})`);
         updateSvgViewport();
         updateEdgeRoutes({drag});
@@ -2351,10 +2354,9 @@
         event.preventDefault();
         node.x += movement[0];
         node.y += movement[1];
-        hasMoved = true;
         group.setAttribute("transform", `translate(${node.x} ${node.y})`);
         updateSvgViewport();
-        updateEdgeRoutes({force: true});
+        updateEdgeRoutes({force: true, movedNode: node});
       });
 
       const finishDragging = event => {
@@ -2369,7 +2371,7 @@
         if (group.hasPointerCapture(event.pointerId)) {
           group.releasePointerCapture(event.pointerId);
         }
-        updateEdgeRoutes({force: true});
+        updateEdgeRoutes({force: true, movedNode: node});
       };
       group.addEventListener("pointerup", finishDragging);
       group.addEventListener("pointercancel", finishDragging);
