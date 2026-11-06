@@ -22,13 +22,13 @@ pub struct GraphDiagnostic {
     pub expected: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum GraphDirection {
     TopDown,
     LeftRight,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct GraphNode {
     pub id: String,
     pub name: Option<String>,
@@ -43,7 +43,7 @@ pub struct SourceReference {
     pub end: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct GraphEdge {
     pub from: String,
     pub to: String,
@@ -53,7 +53,7 @@ pub struct GraphEdge {
     pub arrow_end: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Graph {
     pub direction: GraphDirection,
     pub name: Option<String>,
@@ -63,7 +63,7 @@ pub struct Graph {
     pub partials: Vec<GraphPartial>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct GraphPartial {
     pub id: String,
     pub content: String,

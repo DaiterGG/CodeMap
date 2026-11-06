@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-pattern="crosses" data-server-mode="{{SERVER_MODE}}">
+<html lang="en" data-pattern="crosses">
 
 <head>
   <meta charset="utf-8">
@@ -327,6 +327,12 @@
       width: 100%;
     }
 
+    .node-summary-result {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--text-color);
+    }
+
     .page-identity {
       display: flex;
       flex-direction: column;
@@ -401,7 +407,7 @@
       overflow: hidden;
       width: 100%;
       min-width: 0;
-      text-align: left;
+      text-align: center;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -454,6 +460,7 @@
       color: var(--muted-color);
       font-size: 12px;
       font-weight: 600;
+      text-align: center;
     }
 
     .model-option {
@@ -465,7 +472,7 @@
       color: var(--text-color);
       background: transparent;
       font: inherit;
-      text-align: left;
+      text-align: center;
       cursor: pointer;
     }
 
@@ -702,6 +709,36 @@
       gap: 8px;
     }
 
+    .generation-mode-setting {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .api-status-row {
+      justify-content: flex-end;
+      margin: 0;
+    }
+
+    .api-auth-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
+    .setting-help {
+      display: inline-grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      border: 1px solid var(--muted-color);
+      border-radius: 50%;
+      color: var(--muted-color);
+      font-size: 12px;
+      cursor: help;
+    }
+
     .upload-option input {
       appearance: none;
       width: 16px;
@@ -794,8 +831,9 @@
         <div class="graph-details" id="graph-details">{{GRAPH_DETAILS}}</div>
       </div>
       <div class="page-controls">
+        <button class="control-button" id="export-button" type="button" aria-haspopup="dialog"
+          aria-controls="export-dialog">Import / Export</button>
         <div class="web-control">
-          <span>API: <span id="api-status" aria-live="polite">Loading...</span></span>
           <button class="control-button" id="generation-settings-button" type="button"
             aria-haspopup="dialog" aria-controls="generation-settings-dialog">Generation Settings</button>
         </div>
@@ -824,23 +862,10 @@
         <h2 id="upload-dialog-title">Upload code</h2>
         <button class="control-button" id="upload-close-button" type="button" aria-label="Close upload window">Close</button>
       </div>
-      <div class="upload-options">
-        <label class="upload-option" for="include-gitignored">
-          <input id="include-gitignored" type="checkbox">
-          Include .gitignore items
-        </label>
-        <label class="upload-option" for="include-non-text">
-          <input id="include-non-text" type="checkbox">
-          Include non text files
-        </label>
-        <label class="upload-option" for="ignore-big-files">
-          <input id="ignore-big-files" type="checkbox">
-          Ignore files too large to fit in a model chunk
-        </label>
-      </div>
-      <label class="upload-field" for="upload-source">
-        Folder path or repository URL
-        <input id="upload-source" type="text" placeholder="Select a folder or enter a URL" autocomplete="off">
+      <p class="upload-option">Only the latest uploaded project, graph, and generated node summaries are saved in this browser until cleared. Git ignore rules are applied locally. Generation sends selected source files to OpenRouter.</p>
+      <label class="upload-field" for="upload-files">
+        Select a local folder
+        <input id="upload-files" type="file" webkitdirectory directory multiple hidden>
       </label>
       <div class="upload-dropzone" id="upload-dropzone" tabindex="0">
         Drop files or folders here
@@ -856,15 +881,41 @@
         <button class="control-button" id="generation-settings-close-button" type="button"
           aria-label="Close generation settings">Close</button>
       </div>
-      <label class="upload-option" for="parallel-generation">
-        <input id="parallel-generation" type="checkbox">
-        Run multi-agent chunks in parallel
+      <div class="generation-mode-setting">
+        <label class="upload-option" for="sequential-generation">
+          <input id="sequential-generation" type="checkbox">
+          Generate repository chunks sequentially
+        </label>
+        <span class="setting-help" tabindex="0"
+          title="Sequential mode waits for each repository chunk to finish before starting the next. When unchecked, chunks generate in parallel for faster results.">?</span>
+      </div>
+      <div class="api-auth-controls">
+        <p class="upload-option api-status-row">API: <span id="api-status" aria-live="polite">Checking...</span></p>
+        <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog class="upload-dialog" id="export-dialog" aria-labelledby="export-dialog-title">
+    <div class="upload-panel">
+      <div class="upload-heading">
+        <h2 id="export-dialog-title">Import / Export CodeMap files</h2>
+        <button class="control-button" id="export-close-button" type="button"
+          aria-label="Close export window">Close</button>
+      </div>
+      <label class="upload-field" for="import-graph-file">
+        Import a graph file (.gr or .json)
+        <input id="import-graph-file" type="file" accept=".gr,.json,application/json,text/plain" hidden>
       </label>
-      <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
+      <button class="control-button" id="import-graph-button" type="button">Choose graph file</button>
+      <span id="import-graph-status" aria-live="polite"></span>
+      <button class="control-button" id="export-graph-gr" type="button" disabled>Download graph.gr</button>
+      <button class="control-button" id="export-graph-json" type="button" disabled>Download graph.json</button>
     </div>
   </dialog>
   <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
   <script type="application/json" id="source-data">{{SOURCE_JSON}}</script>
+  <script type="application/json" id="system-prompt">{{SYSTEM_PROMPT_JSON}}</script>
+  <pre hidden id="codemap-core-wasm">{{CODEMAP_WASM}}</pre>
   <pre hidden id="elk-license">{{ELK_LICENSE}}</pre>
   <pre hidden id="elkjs-libavoid-license">{{LIBAVOID_LICENSE}}</pre>
   <pre hidden id="libavoid-js-license">{{LIBAVOID_JS_LICENSE}}</pre>
@@ -872,8 +923,8 @@
   <script>{{ELK_JS}}</script>
   <script>{{LIBAVOID_JS}}</script>
   <script>{{HIGHLIGHT_JS}}</script>
+  <script>{{CODEMAP_BINDINGS_JS}}</script>
   <script>
-    const apiStatus = document.getElementById("api-status");
     const pageHeader = document.querySelector(".page-header");
     const defaultSidebarNodes = [...pageHeader.childNodes];
     const graphDetails = document.getElementById("graph-details");
@@ -884,28 +935,108 @@
     const modelOptions = document.getElementById("model-options");
     const authButton = document.getElementById("openrouter-sign-in-button");
     const generationSettingsButton = document.getElementById("generation-settings-button");
+    const generationSettingsButtonParent = generationSettingsButton.parentNode;
+    const generationSettingsButtonNextSibling = generationSettingsButton.nextSibling;
     const generationSettingsDialog = document.getElementById("generation-settings-dialog");
     const generationSettingsCloseButton = document.getElementById("generation-settings-close-button");
-    const parallelGeneration = document.getElementById("parallel-generation");
+    const sequentialGeneration = document.getElementById("sequential-generation");
+    const exportButton = document.getElementById("export-button");
+    const exportDialog = document.getElementById("export-dialog");
+    const exportCloseButton = document.getElementById("export-close-button");
+    const exportGraphGrButton = document.getElementById("export-graph-gr");
+    const exportGraphJsonButton = document.getElementById("export-graph-json");
+    const importGraphFile = document.getElementById("import-graph-file");
+    const importGraphButton = document.getElementById("import-graph-button");
+    const importGraphStatus = document.getElementById("import-graph-status");
     const modelControls = document.querySelector(".model-controls");
     const modelControlsParent = modelControls.parentNode;
     const modelControlsNextSibling = modelControls.nextSibling;
     const uploadCodeButton = document.getElementById("upload-code-button");
     const uploadDialog = document.getElementById("upload-dialog");
-    const uploadSource = document.getElementById("upload-source");
+    const uploadFiles = document.getElementById("upload-files");
     const uploadDropzone = document.getElementById("upload-dropzone");
     const uploadBrowseButton = document.getElementById("upload-browse-button");
     const uploadCloseButton = document.getElementById("upload-close-button");
     const uploadPickerStatus = document.getElementById("upload-picker-status");
-    const includeGitignored = document.getElementById("include-gitignored");
-    const includeNonText = document.getElementById("include-non-text");
-    const ignoreBigFiles = document.getElementById("ignore-big-files");
     const generateButton = document.getElementById("generate-button");
-    let lastRenderedGenerationId = null;
-    let activeGenerationId = null;
-    let generationStarting = false;
+    let projectFiles = [];
+    let embeddedSources = {};
+    let generatedGraphSource = "";
+    let defaultApiConfigured = false;
+    let nodeSummaries = {};
+    uploadCodeButton.disabled = true;
+    generateButton.disabled = true;
+    let openRouterKey = sessionStorage.getItem("openrouter-api-key") || "";
+    const WORKSPACE_DB_NAME = "codemap-workspace";
+    const WORKSPACE_STORE_NAME = "state";
+    const SAVED_MODEL_KEY = "codemap-selected-model";
+    const SAVED_SUMMARY_MODEL_KEY = "codemap-summary-selected-model";
+    const SAVED_SIDEBAR_WIDTH_KEY = "codemap-sidebar-width";
+    const readSavedNumber = key => {
+      try {
+        const value = Number(localStorage.getItem(key));
+        return Number.isFinite(value) && value > 0 ? value : null;
+      } catch (error) {
+        console.warn("Could not read saved CodeMap settings:", error);
+        return null;
+      }
+    };
+    const readSavedModel = key => {
+      try {
+        return localStorage.getItem(key) || "";
+      } catch (error) {
+        console.warn("Could not read saved CodeMap settings:", error);
+        return "";
+      }
+    };
+    let savedSidebarWidth = readSavedNumber(SAVED_SIDEBAR_WIDTH_KEY);
+    let savedModelId = readSavedModel(SAVED_MODEL_KEY);
+    let summaryModelId = readSavedModel(SAVED_SUMMARY_MODEL_KEY);
+    const saveSetting = (key, value) => {
+      try {
+        localStorage.setItem(key, String(value));
+      } catch (error) {
+        console.error("Could not save CodeMap setting:", error);
+      }
+    };
+    const openWorkspaceDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.open(WORKSPACE_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore(WORKSPACE_STORE_NAME, {keyPath: "id"});
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Could not open browser storage."));
+      request.onblocked = () => reject(new Error("Browser storage upgrade is blocked by another CodeMap tab."));
+    });
+    const workspaceDatabasePromise = openWorkspaceDatabase();
+    const getWorkspaceItem = async id => {
+      const database = await workspaceDatabasePromise;
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(WORKSPACE_STORE_NAME, "readonly");
+        const request = transaction.objectStore(WORKSPACE_STORE_NAME).get(id);
+        request.onsuccess = () => resolve(request.result?.value);
+        request.onerror = () => reject(request.error || new Error("Could not read saved browser data."));
+        transaction.onabort = () => reject(transaction.error || new Error("Could not read saved browser data."));
+      });
+    };
+    const setWorkspaceItem = async (id, value) => {
+      const database = await workspaceDatabasePromise;
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(WORKSPACE_STORE_NAME, "readwrite");
+        transaction.objectStore(WORKSPACE_STORE_NAME).put({id, value});
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error || new Error("Could not save browser data."));
+        transaction.onabort = () => reject(transaction.error || new Error("Could not save browser data."));
+      });
+    };
+    const saveCurrentGraph = () => setWorkspaceItem("generated-graph", {
+      graph,
+      source: generatedGraphSource,
+      nodeSummaries: {...nodeSummaries}
+    });
     const generationFailureLabel = error =>
       /429|rate.?limit/i.test(error) ? "Generation failed: ratelimited" : "Generation failed";
+    const apiStatus = document.getElementById("api-status");
     const sourceLanguageByExtension = {
       cjs: "javascript",
       bash: "bash",
@@ -975,16 +1106,23 @@
         ? hljs.highlight(source, {language}).value
         : hljs.highlightAuto(source).value;
     };
-    const recommendedModelIds = new Set([
-      "liquid/lfm-2.5-2.6b:free",
-      "inception/mercury-decide:free",
-      "xingchen-agi/xing4.0-29b-a4b:free"
-    ]);
+    const DEFAULT_MODEL_ID = "openrouter/free";
+    const recommendedModelIds = new Set([DEFAULT_MODEL_ID]);
     let availableModels = [];
     let selectedModelId = "";
+    let modelSelectionContext = "main";
+    const getEffectiveModelId = () => modelSelectionContext === "summary" && summaryModelId
+      ? summaryModelId
+      : selectedModelId;
     const restoreSidebarControls = () => {
       closeModelMenu();
+      modelSelectionContext = "main";
+      updateModelSelectLabel();
       modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
+      generationSettingsButtonParent.insertBefore(
+        generationSettingsButton,
+        generationSettingsButtonNextSibling
+      );
       pageHeader.replaceChildren(...defaultSidebarNodes);
     };
     const showNodePanel = node => {
@@ -1027,8 +1165,107 @@
       generateSummaryButton.className = "control-button";
       generateSummaryButton.id = "generate-summary-button";
       generateSummaryButton.type = "button";
-      generateSummaryButton.textContent = "Generate node summary";
-      summaryControls.append(modelControls, generateSummaryButton);
+      generateSummaryButton.textContent = nodeSummaries[node.id]
+        ? "Regenerate node summary"
+        : "Generate node summary";
+      const summaryResult = document.createElement("div");
+      summaryResult.className = "node-summary-result";
+      summaryResult.setAttribute("role", "status");
+      summaryResult.setAttribute("aria-live", "polite");
+      summaryResult.textContent = nodeSummaries[node.id] || "";
+      summaryControls.append(
+        modelControls,
+        generationSettingsButton,
+        generateSummaryButton,
+        summaryResult
+      );
+      generateSummaryButton.addEventListener("click", async () => {
+        if (!openRouterKey && !defaultApiConfigured) {
+          summaryResult.textContent = "Sign in to OpenRouter or configure the server API.";
+          return;
+        }
+        const summaryModelIdForRequest = getEffectiveModelId();
+        if (!summaryModelIdForRequest) {
+          summaryResult.textContent = "Select a model to generate a summary.";
+          return;
+        }
+        const summaryModel = availableModels.find(model => model.id === summaryModelIdForRequest);
+        if (!Number.isSafeInteger(summaryModel?.context_length) || summaryModel.context_length <= 0) {
+          summaryResult.textContent = "The selected model's context window is unavailable.";
+          return;
+        }
+
+        const graphForSummary = graph;
+        generateSummaryButton.disabled = true;
+        generateSummaryButton.textContent = "Generating summary...";
+        summaryResult.textContent = "";
+        const summaryContextEstimate = document.createElement("div");
+        summaryContextEstimate.className = "summary-context-estimate";
+        summaryContextEstimate.setAttribute("role", "status");
+        summaryContextEstimate.setAttribute("aria-live", "polite");
+        try {
+          const connectedNodes = graphForSummary.nodes.filter(candidate =>
+            candidate.id !== node.id && graphForSummary.edges.some(edge =>
+              edge.from === node.id && edge.to === candidate.id ||
+              edge.to === node.id && edge.from === candidate.id
+            )
+          );
+          const sourcePaths = new Set(
+            [node, ...connectedNodes].flatMap(contextNode =>
+              (contextNode.sources ?? []).map(reference => reference.path)
+            )
+          );
+          const files = await Promise.all([...sourcePaths].map(async path => ({
+            path,
+            contents: await getSourceFileContents(path)
+          })));
+          const request = JSON.stringify({
+            nodes: graphForSummary.nodes.map(({id, name, sources}) => ({id, name, sources})),
+            edges: graphForSummary.edges.map(({from, to}) => ({from, to})),
+            node_id: node.id,
+            files,
+            model: summaryModelIdForRequest,
+            api_key: openRouterKey,
+            api_url: openRouterEndpoint(),
+            context_length: summaryModel.context_length,
+            referer: window.location.origin
+          });
+          const core = await browserCorePromise;
+          const result = JSON.parse(await core.generate_node_summary(request, estimateJson => {
+            const estimate = JSON.parse(estimateJson);
+            const omittedConnectedNodes =
+              estimate.total_connected_nodes - estimate.included_connected_nodes;
+            summaryContextEstimate.textContent =
+              `Estimated input: ${estimate.estimated_bytes.toLocaleString()} tokens ` +
+              `(UTF-8 byte estimate; 90% limit: ${estimate.context_limit_bytes.toLocaleString()} tokens). ` +
+              `Included ${estimate.included_connected_nodes} of ${estimate.total_connected_nodes} connected nodes` +
+              (omittedConnectedNodes ? `; omitted ${omittedConnectedNodes} to fit the context.` : ".");
+            summaryControls.insertBefore(summaryContextEstimate, summaryResult);
+          }));
+          const summary = result.summary;
+          if (graph !== graphForSummary) {
+            summaryResult.textContent = "The graph changed while generating; this summary was discarded.";
+            return;
+          }
+          nodeSummaries[node.id] = summary.trim();
+          summaryResult.textContent = nodeSummaries[node.id];
+          generateSummaryButton.textContent = "Regenerate node summary";
+          try {
+            await saveCurrentGraph();
+          } catch (error) {
+            summaryResult.textContent += `\n\nCould not cache this summary: ${error.message}`;
+            console.error("Node summary could not be cached:", error);
+          }
+        } catch (error) {
+          summaryResult.textContent = error.message || "Could not generate the node summary.";
+          console.error("Node summary generation failed:", error);
+        } finally {
+          generateSummaryButton.disabled = false;
+          generateSummaryButton.textContent = nodeSummaries[node.id]
+            ? "Regenerate node summary"
+            : "Generate node summary";
+        }
+      });
       const tabButtons = [];
       const setActiveTab = activeTab => {
         for (const button of tabButtons) {
@@ -1037,6 +1274,8 @@
           button.tabIndex = selected ? 0 : -1;
         }
         closeModelMenu();
+        modelSelectionContext = activeTab === "summary" ? "summary" : "main";
+        updateModelSelectLabel();
         if (activeTab === "summary") {
           content.replaceChildren(summaryControls);
           return;
@@ -1076,27 +1315,19 @@
             }
             try {
               let result;
-              if (Object.hasOwn(embeddedSources, reference.path)) {
-                const sourceLines = embeddedSources[reference.path].split(/\r?\n/);
-                const start = reference.start ?? 1;
-                const end = reference.end ?? sourceLines.length;
-                if (reference.start !== null && end > sourceLines.length) {
-                  throw new Error("Source line range is outside the file.");
-                }
-                result = {
-                  lines: sourceLines.slice(start - 1, end).map((text, index) => ({
-                    number: start + index,
-                    text
-                  }))
-                };
-              } else {
-                const response = await fetch(`/api/source?${query}`, {cache: "no-store"});
-                if (!response.ok) {
-                  const message = await response.text();
-                  throw new Error(message || `Source request failed with status ${response.status}`);
-                }
-                result = await response.json();
+              const source = await getSourceFileContents(reference.path);
+              const sourceLines = source.split(/\r?\n/);
+              const start = reference.start ?? 1;
+              const end = reference.end ?? sourceLines.length;
+              if (reference.start !== null && end > sourceLines.length) {
+                throw new Error("Source line range is outside the file.");
               }
+              result = {
+                lines: sourceLines.slice(start - 1, end).map((text, index) => ({
+                  number: start + index,
+                  text
+                }))
+              };
               const lineNumbers = document.createElement("pre");
               lineNumbers.className = "source-line-numbers";
               lineNumbers.textContent = result.lines.map(line => line.number).join("\n");
@@ -1116,15 +1347,14 @@
               file.dataset.loaded = "true";
             } catch (error) {
               sourceStatus.textContent = error instanceof TypeError
-                ? window.location.protocol === "file:" && !Object.hasOwn(embeddedSources, reference.path)
-                  ? "Open this graph with --web or --server to load source files."
-                  : `Could not reach CodeMap at ${window.location.origin}. Make sure the server is running.`
+                ? "This graph's source file is not loaded in the browser."
                 : error.message || "Could not load this source file.";
             } finally {
               delete file.dataset.loading;
             }
           });
           sourceFileList.append(file);
+          if (node.sources.length === 1) file.open = true;
         }
         content.replaceChildren(sourceFileList);
       };
@@ -1147,54 +1377,274 @@
     uploadCodeButton.addEventListener("click", () => uploadDialog.showModal());
     generationSettingsButton.addEventListener("click", () => generationSettingsDialog.showModal());
     generationSettingsCloseButton.addEventListener("click", () => generationSettingsDialog.close());
-    for (const dialog of [uploadDialog, generationSettingsDialog]) {
+    exportButton.addEventListener("click", () => exportDialog.showModal());
+    exportCloseButton.addEventListener("click", () => exportDialog.close());
+    for (const dialog of [uploadDialog, generationSettingsDialog, exportDialog]) {
       dialog.addEventListener("click", event => {
         if (event.target === dialog) dialog.close();
       });
     }
-    const updateUploadButton = () => {
-      const source = uploadSource.value.trim();
-      uploadCodeButton.textContent = source || "Upload code";
-      uploadCodeButton.title = source;
+    const updateExportButtons = () => {
+      exportGraphGrButton.disabled = !generatedGraphSource;
+      exportGraphJsonButton.disabled = graph.nodes.length === 0;
     };
-    const showSourcePath = path => {
-      uploadSource.value = path || "";
-      updateUploadButton();
-      document.getElementById("upload-dialog-title").textContent =
-        path ? "Update code" : "Upload code";
+    const downloadTextFile = (filename, contents, type) => {
+      const url = URL.createObjectURL(new Blob([contents], {type}));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
-    uploadSource.addEventListener("input", updateUploadButton);
-    uploadBrowseButton.addEventListener("click", async () => {
-      uploadBrowseButton.disabled = true;
-      uploadBrowseButton.textContent = "Opening folder picker...";
-      uploadPickerStatus.textContent = "";
-      try {
-        const response = await fetch("/api/browse-folder", {
-          method: "POST",
-          cache: "no-store"
+    const graphJsonForExport = () => JSON.stringify({
+      direction: graph.direction,
+      name: graph.name ?? null,
+      description: graph.description ?? null,
+      width: 320,
+      height: 200,
+      nodes: graph.nodes.map(({id, name, description, sources}) => ({
+        id,
+        name: name ?? null,
+        description: description ?? null,
+        sources,
+        width: 210,
+        height: 131
+      })),
+      edges: graph.edges.map(({from, to, label, dotted, arrow_start, arrow_end}) => ({
+        from,
+        to,
+        label,
+        dotted,
+        arrow_start,
+        arrow_end
+      }))
+    });
+    exportGraphGrButton.addEventListener("click", () =>
+      downloadTextFile("graph.gr", generatedGraphSource, "application/octet-stream"));
+    exportGraphJsonButton.addEventListener("click", () =>
+      downloadTextFile("graph.json", graphJsonForExport(), "application/json;charset=utf-8"));
+    importGraphButton.addEventListener("click", () => importGraphFile.click());
+    importGraphFile.addEventListener("change", () => {
+      const file = importGraphFile.files[0];
+      if (!file) return;
+      importGraphFile.disabled = true;
+      importGraphButton.disabled = true;
+      importGraphStatus.textContent = "Reading graph file...";
+      file.text()
+        .then(async contents => {
+          const extension = file.name.split(".").at(-1).toLowerCase();
+          let nextGraph;
+          let nextSource = "";
+          if (extension === "gr") {
+            const core = await browserCorePromise;
+            const parsed = JSON.parse(core.parse_graph_source(normalizeGraphSource(contents)));
+            nextGraph = prepareGraphForDisplay(parsed);
+            nextSource = normalizeGraphSource(contents);
+          } else if (extension === "json") {
+            const imported = JSON.parse(contents);
+            if (isStoredGeneratedGraph(imported)) {
+              nextGraph = prepareGraphForDisplay(imported.graph);
+              nextSource = imported.source;
+            } else {
+              nextGraph = prepareGraphForDisplay(imported);
+              if (typeof imported.source === "string") {
+                nextSource = normalizeGraphSource(imported.source);
+              }
+            }
+          } else {
+            throw new Error("Choose a .gr or .json graph file.");
+          }
+          const previousGraph = graph;
+          const previousSource = generatedGraphSource;
+          const previousSummaries = nodeSummaries;
+          graph = nextGraph;
+          generatedGraphSource = nextSource;
+          nodeSummaries = {};
+          try {
+            await renderGraph(graph);
+          } catch (error) {
+            graph = previousGraph;
+            generatedGraphSource = previousSource;
+            nodeSummaries = previousSummaries;
+            await renderGraph(graph);
+            throw error;
+          }
+          updateExportButtons();
+          try {
+            await saveCurrentGraph();
+          } catch (error) {
+            importGraphStatus.textContent =
+              `Imported ${file.name}, but could not save it in this browser: ${error.message}`;
+            return;
+          }
+          importGraphStatus.textContent = `Imported ${file.name}.`;
+        })
+        .catch(error => {
+          importGraphStatus.textContent = error.message || "Could not import graph file.";
+        })
+        .finally(() => {
+          importGraphFile.value = "";
+          importGraphFile.disabled = false;
+          importGraphButton.disabled = false;
         });
-        const body = await response.text();
-        let result;
-        try {
-          result = JSON.parse(body);
-        } catch {
-          result = body;
-        }
-        if (!response.ok) {
-          throw new Error(typeof result === "string" ? result : "The folder picker could not be opened.");
-        }
-        if (result.path) {
-          showSourcePath(result.path);
-          uploadDialog.close();
-        }
-      } catch (error) {
-        uploadPickerStatus.textContent = error instanceof TypeError
-          ? "Could not reach CodeMap. Make sure it is running in --web mode."
-          : error.message || "Could not open the folder picker.";
-      } finally {
-        uploadBrowseButton.disabled = false;
-        uploadBrowseButton.textContent = "Choose folder";
+    });
+    const normalizeGraphSource = source => {
+      let normalized = source.trim();
+      if (normalized.startsWith("```")) {
+        const newline = normalized.indexOf("\n");
+        normalized = newline < 0 ? "" : normalized.slice(newline + 1);
       }
+      return normalized.replace(/```\s*$/, "").trim();
+    };
+    const updateUploadButton = () => {
+      const label = projectFiles.length
+        ? `${projectFiles.length} files selected`
+        : "Upload code";
+      uploadCodeButton.textContent = label;
+      uploadCodeButton.title = label;
+    };
+    const isStoredFileList = value => Array.isArray(value) &&
+      value.every(file => typeof file?.path === "string" && typeof file?.contents === "string");
+    const getSourceFileContents = async path => {
+      if (!Object.hasOwn(embeddedSources, path)) {
+        const savedFiles = await getWorkspaceItem("project-files");
+        if (isStoredFileList(savedFiles)) {
+          projectFiles = savedFiles;
+          embeddedSources = Object.fromEntries(
+            projectFiles.map(({path, contents}) => [path, contents])
+          );
+          updateUploadButton();
+        }
+      }
+      if (!Object.hasOwn(embeddedSources, path)) {
+        throw new Error("This graph's source file is not loaded in the browser.");
+      }
+      return embeddedSources[path];
+    };
+    const isStoredGraph = value => value && typeof value === "object" &&
+      Array.isArray(value.nodes) && Array.isArray(value.edges);
+    const isStoredGeneratedGraph = value => value && typeof value === "object" &&
+      isStoredGraph(value.graph) && typeof value.source === "string";
+    const getStoredNodeSummaries = (value, storedGraph) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+      const nodeIds = new Set(storedGraph.nodes.map(node => node.id));
+      return Object.fromEntries(Object.entries(value).filter(([nodeId, summary]) =>
+        nodeIds.has(nodeId) && typeof summary === "string"
+      ));
+    };
+    const prepareGraphForDisplay = value => {
+      if (!value || typeof value !== "object" || !Array.isArray(value.nodes) ||
+        !Array.isArray(value.edges) || value.nodes.length === 0) {
+        throw new Error("The JSON file does not contain a graph with nodes and edges.");
+      }
+      const direction = value.direction;
+      if (!["LR", "TD", "LeftRight", "TopDown"].includes(direction)) {
+        throw new Error("The graph direction must be LR or TD.");
+      }
+      const nodeIds = new Set();
+      const nodes = value.nodes.map(node => {
+        if (!node || typeof node.id !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(node.id) ||
+          node.id.toLowerCase() === "end" || nodeIds.has(node.id)) {
+          throw new Error("The graph contains an invalid or duplicate node ID.");
+        }
+        nodeIds.add(node.id);
+        if (node.name != null && typeof node.name !== "string" ||
+          node.description != null && typeof node.description !== "string") {
+          throw new Error(`Node ${node.id} has an invalid name or description.`);
+        }
+        if (node.sources != null && (!Array.isArray(node.sources) ||
+          node.sources.some(source => !source || typeof source.path !== "string"))) {
+          throw new Error(`Node ${node.id} has invalid source references.`);
+        }
+        return {
+          id: node.id,
+          name: node.name ?? null,
+          description: node.description ?? null,
+          sources: node.sources ?? [],
+          width: 210,
+          height: 131
+        };
+      });
+      const edges = value.edges.map(edge => {
+        if (!edge || typeof edge.from !== "string" || typeof edge.to !== "string" ||
+          !nodeIds.has(edge.from) || !nodeIds.has(edge.to) ||
+          typeof edge.label !== "string" ||
+          typeof edge.dotted !== "boolean" ||
+          typeof edge.arrow_start !== "boolean" ||
+          typeof edge.arrow_end !== "boolean") {
+          throw new Error("The graph contains an invalid edge.");
+        }
+        return {
+          from: edge.from,
+          to: edge.to,
+          label: edge.label,
+          dotted: edge.dotted,
+          arrow_start: edge.arrow_start,
+          arrow_end: edge.arrow_end
+        };
+      });
+      if (value.name != null && typeof value.name !== "string" ||
+        value.description != null && typeof value.description !== "string") {
+        throw new Error("The graph has an invalid name or description.");
+      }
+      return {
+        direction: direction === "LR" || direction === "LeftRight" ? "LR" : "TD",
+        name: value.name ?? null,
+        description: value.description ?? null,
+        width: 320,
+        height: 200,
+        nodes,
+        edges,
+        partials: Array.isArray(value.partials) ? value.partials : []
+      };
+    };
+    const readProjectFiles = async fileList => {
+      const selected = Array.from(fileList)
+        .map(file => ({
+          file,
+          path: (file.webkitRelativePath || file.name).replaceAll("\\", "/")
+        }))
+        .filter(({path}) => !path.split("/").includes(".git"));
+      if (selected.length === 0) {
+        uploadPickerStatus.textContent = "No project files selected.";
+        return;
+      }
+      uploadPickerStatus.textContent = `Reading ${selected.length} files...`;
+      const loaded = [];
+      let skippedFiles = fileList.length - selected.length;
+      for (const {file, path} of selected) {
+        const bytes = await file.arrayBuffer();
+        try {
+          const contents = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
+          if (contents.includes("\0")) skippedFiles += 1;
+          else loaded.push({path, contents});
+        } catch {
+          skippedFiles += 1;
+        }
+      }
+      const ignoredPaths = await filterIgnoredInWasm(loaded);
+      projectFiles = loaded.filter(({path}) => !ignoredPaths.has(path));
+      embeddedSources = Object.fromEntries(projectFiles.map(({path, contents}) => [path, contents]));
+      updateUploadButton();
+      document.getElementById("upload-dialog-title").textContent = "Update code";
+      try {
+        await setWorkspaceItem("project-files", projectFiles);
+        uploadPickerStatus.textContent =
+          `${projectFiles.length} readable files saved in this browser; ${ignoredPaths.size} ignored and ${skippedFiles} binary or .git files skipped.`;
+        uploadDialog.close();
+      } catch (error) {
+        uploadPickerStatus.textContent =
+          `${projectFiles.length} files are loaded for this visit, but could not be saved for refresh: ${error.message}`;
+      }
+    };
+    uploadBrowseButton.addEventListener("click", () => uploadFiles.click());
+    uploadFiles.addEventListener("change", () => {
+      readProjectFiles(uploadFiles.files).catch(error => {
+        uploadPickerStatus.textContent = error.message || "Could not read the selected files.";
+      });
     });
     uploadCloseButton.addEventListener("click", () => uploadDialog.close());
     uploadDropzone.addEventListener("dragover", event => {
@@ -1207,54 +1657,75 @@
     uploadDropzone.addEventListener("drop", event => {
       event.preventDefault();
       uploadDropzone.classList.remove("dragging");
-      const count = event.dataTransfer.files.length;
-      uploadPickerStatus.textContent = count
-        ? `${count} item${count === 1 ? "" : "s"} dropped.`
-        : "";
+      readProjectFiles(event.dataTransfer.files).catch(error => {
+        uploadPickerStatus.textContent = error.message || "Could not read the dropped files.";
+      });
     });
     generateButton.addEventListener("click", async () => {
-      const source = uploadSource.value.trim();
-      if (!source) {
-        generateButton.textContent = "Choose a folder or URL";
+      if (projectFiles.length === 0) {
+        generateButton.textContent = "Choose a local folder";
         return;
       }
       if (!selectedModelId) {
         generateButton.textContent = "Select a model";
         return;
       }
+      if (!openRouterKey && !defaultApiConfigured) {
+        generateButton.textContent = "Sign in to OpenRouter";
+        return;
+      }
+      const selectedModel = availableModels.find(model => model.id === selectedModelId);
+      if (!Number.isSafeInteger(selectedModel?.context_length) || selectedModel.context_length <= 0) {
+        generateButton.textContent = "Model context unavailable";
+        return;
+      }
+      if (!window.confirm(
+        `Send ${projectFiles.length} selected source files to OpenRouter for graph generation?`
+      )) return;
       generateButton.disabled = true;
-      generationStarting = true;
-      generateButton.textContent = "Starting...";
+      generateButton.textContent = "Preparing...";
+      generatedGraphSource = "";
+      updateExportButtons();
       try {
-        const response = await fetch("/api/generate", {
-          method: "POST",
-          cache: "no-store",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            source,
-            model: selectedModelId,
-            include_gitignored: includeGitignored.checked,
-            include_non_text: includeNonText.checked,
-            ignore_big_files: ignoreBigFiles.checked,
-            parallel: parallelGeneration.checked
-          })
+        const request = JSON.stringify({
+          files: projectFiles,
+          model: selectedModelId,
+          api_key: openRouterKey,
+          api_url: openRouterEndpoint(),
+          context_length: selectedModel.context_length,
+          parallel: !sequentialGeneration.checked,
+          referer: window.location.origin
         });
-        const body = await response.text();
-        let result;
+        const core = await browserCorePromise;
+        const generated = JSON.parse(await core.generate_multiagent(request, status => {
+          generateButton.textContent = status;
+        }));
+        graph = {
+          ...generated.graph,
+          direction: generated.graph.direction === "LeftRight" ? "LR" : "TD",
+          width: 320,
+          height: 200,
+          nodes: generated.graph.nodes.map(node => ({...node, width: 210, height: 131})),
+          edges: generated.graph.edges
+        };
+        generatedGraphSource = normalizeGraphSource(generated.source);
+        nodeSummaries = {};
+        await renderGraph(graph);
+        updateExportButtons();
         try {
-          result = JSON.parse(body);
-        } catch {
-          result = body;
+          await saveCurrentGraph();
+        } catch (error) {
+          console.error("Generated graph and source could not be saved in this browser:", error);
         }
-        if (!response.ok) throw new Error(typeof result === "string" ? result : "Could not start generation.");
-        activeGenerationId = result.id;
-        generationStarting = false;
-        generateButton.textContent = "Generating...";
+        generateButton.textContent = "Generated";
+        generateButton.title = "";
       } catch (error) {
-        generationStarting = false;
-        const message = error.message || "Could not start generation.";
+        const message = error.message || "Could not generate graph.";
         generateButton.textContent = generationFailureLabel(message);
         generateButton.title = message;
+        console.error("Graph generation failed:", error);
+        updateExportButtons();
+      } finally {
         generateButton.disabled = false;
       }
     });
@@ -1298,6 +1769,10 @@
       }).format(model.context_length).toLowerCase();
       return `${model.name} (${contextSize})`;
     };
+    const updateModelSelectLabel = () => {
+      const selectedModel = availableModels.find(model => model.id === getEffectiveModelId());
+      if (selectedModel) modelSelect.textContent = modelDisplayName(selectedModel);
+    };
     const renderModels = () => {
       const query = modelSearch.value.trim().toLocaleLowerCase();
       const filtered = availableModels.filter(model =>
@@ -1334,11 +1809,18 @@
           option.type = "button";
           option.role = "option";
           option.dataset.modelId = model.id;
-          option.setAttribute("aria-selected", String(model.id === selectedModelId));
+          option.setAttribute("aria-selected", String(model.id === getEffectiveModelId()));
           option.textContent = modelDisplayName(model);
           option.addEventListener("click", () => {
-            selectedModelId = model.id;
-            modelSelect.textContent = option.textContent;
+            if (modelSelectionContext === "summary") {
+              summaryModelId = model.id;
+              saveSetting(SAVED_SUMMARY_MODEL_KEY, summaryModelId);
+            } else {
+              selectedModelId = model.id;
+              savedModelId = selectedModelId;
+              saveSetting(SAVED_MODEL_KEY, selectedModelId);
+            }
+            updateModelSelectLabel();
             closeModelMenu();
           });
           modelOptions.append(option);
@@ -1379,44 +1861,72 @@
       authButton.textContent = status === "user" ? "Log out" : "Auth via OpenRouter";
       authButton.dataset.action = status === "user" ? "logout" : "login";
     };
-    const isServerMode = document.documentElement.dataset.serverMode === "true";
-    const hasLocalBackend = isServerMode || window.location.protocol === "http:" &&
-      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    const loadAuthStatus = async () => {
+    const loadApiStatus = async () => {
       try {
         const response = await fetch("/api/auth-status", {cache: "no-store"});
         if (!response.ok) {
-          throw new Error(`Authentication status request failed with status ${response.status}`);
+          throw new Error(`API status request failed with status ${response.status}`);
         }
         const {status} = await response.json();
-        if (status !== "default" && status !== "not found" && status !== "user") {
-          throw new Error("Authentication status response was invalid");
+        if (status !== "default" && status !== "not found") {
+          throw new Error("API status response was invalid.");
         }
-        setAuthStatus(status);
+        defaultApiConfigured = status === "default";
+        if (!openRouterKey) setAuthStatus(status);
       } catch (error) {
-        apiStatus.textContent = "unavailable";
-        console.error("Could not load API authentication status:", error);
+        defaultApiConfigured = false;
+        if (!openRouterKey) apiStatus.textContent = "unavailable";
+        console.error("Could not load default API status:", error);
       }
+    };
+    const openRouterEndpoint = () => !openRouterKey && defaultApiConfigured
+      ? `${window.location.origin}/api/openrouter/chat/completions`
+      : "";
+    const openRouterHeaders = () => {
+      const headers = {
+        "HTTP-Referer": `${window.location.origin}${window.location.pathname}`,
+        "X-OpenRouter-Title": "CodeMap"
+      };
+      if (openRouterKey) headers.Authorization = "Bearer " + openRouterKey;
+      return headers;
     };
     const loadModels = async () => {
       modelSelect.disabled = true;
       modelSelect.textContent = "Loading models...";
       try {
-        const response = await fetch("/api/models?api=openrouter", {
-          cache: "no-store"
-        });
+        const response = await fetch(
+          "https://openrouter.ai/api/v1/models?input_modalities=text&output_modalities=text",
+          {headers: openRouterHeaders(), cache: "no-store"}
+        );
         if (!response.ok) {
           throw new Error(`Model request failed with status ${response.status}`);
         }
-        availableModels = await response.json();
-        const preferred = availableModels.find(model =>
-          model.id === "liquid/lfm-2.5-2.6b:free"
-        );
+        const catalog = await response.json();
+        availableModels = catalog.data
+          .filter(model =>
+            model.architecture?.input_modalities?.includes("text") &&
+            model.architecture?.output_modalities?.includes("text") &&
+            !model.id.endsWith(":batch") &&
+            !model.id.endsWith(":completion")
+          )
+          .map(model => ({
+            ...model,
+            is_free: Number(model.pricing?.prompt) === 0 &&
+              Number(model.pricing?.completion) === 0
+          }));
+        const preferred = availableModels.find(model => model.id === savedModelId) ||
+          availableModels.find(model => model.id === DEFAULT_MODEL_ID);
         selectedModelId = preferred?.id || availableModels[0]?.id || "";
+        savedModelId = selectedModelId;
+        if (selectedModelId) saveSetting(SAVED_MODEL_KEY, selectedModelId);
         const selectedModel = availableModels.find(model => model.id === selectedModelId);
-        modelSelect.textContent = selectedModel
-          ? modelDisplayName(selectedModel)
-          : "No models available";
+        if (summaryModelId && !availableModels.some(model => model.id === summaryModelId)) {
+          summaryModelId = "";
+        }
+        updateModelSelectLabel();
+        if (!selectedModel) {
+          modelSelect.textContent = "No models available";
+        }
         modelSelect.disabled = availableModels.length === 0;
         renderModels();
       } catch (error) {
@@ -1424,54 +1934,134 @@
         console.error("Could not load models:", error);
       }
     };
-    authButton.addEventListener("click", async () => {
-      if (authButton.dataset.action !== "logout") {
-        window.location.assign("/api/auth/start");
+    const createOAuthToken = () => {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      return btoa(String.fromCharCode(...bytes))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+    };
+    const startOpenRouterOAuth = async () => {
+      const verifier = createOAuthToken();
+      const state = createOAuthToken();
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+      sessionStorage.setItem("openrouter-oauth-verifier", verifier);
+      sessionStorage.setItem("openrouter-oauth-state", state);
+      const url = new URL("https://openrouter.ai/auth");
+      url.searchParams.set("callback_url", `${window.location.origin}${window.location.pathname}`);
+      url.searchParams.set("code_challenge", challenge);
+      url.searchParams.set("code_challenge_method", "S256");
+      url.searchParams.set("state", state);
+      url.searchParams.set("key_label", "CodeMap");
+      window.location.assign(url);
+    };
+    const finishOpenRouterOAuth = async () => {
+      const parameters = new URLSearchParams(window.location.search);
+      const code = parameters.get("code");
+      if (parameters.has("error")) {
+        sessionStorage.removeItem("openrouter-oauth-verifier");
+        sessionStorage.removeItem("openrouter-oauth-state");
+        window.history.replaceState(null, "", window.location.pathname);
+        setAuthStatus("sign-in cancelled");
         return;
       }
-      authButton.disabled = true;
-      try {
-        const response = await fetch("/api/auth/logout", {
-          method: "POST",
-          cache: "no-store"
-        });
-        if (!response.ok) {
-          throw new Error(`Logout request failed with status ${response.status}`);
-        }
-        const {status} = await response.json();
-        if (status !== "default" && status !== "not found") {
-          throw new Error("Logout response status was invalid");
-        }
-        setAuthStatus(status);
-        await loadModels();
-      } catch (error) {
-        console.error("Could not log out of OpenRouter:", error);
-        apiStatus.textContent = "logout failed";
-      } finally {
-        authButton.disabled = false;
+      if (!code) return;
+      const verifier = sessionStorage.getItem("openrouter-oauth-verifier");
+      const state = sessionStorage.getItem("openrouter-oauth-state");
+      if (!verifier || !state || parameters.get("state") !== state) {
+        window.history.replaceState(null, "", window.location.pathname);
+        throw new Error("OpenRouter authorization state is missing or invalid.");
       }
-    });
-    const authResult = new URLSearchParams(window.location.search).get("auth");
-    if (authResult === "success") {
+      window.history.replaceState(null, "", window.location.pathname);
+      const response = await fetch("https://openrouter.ai/api/v1/auth/keys", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          code,
+          code_verifier: verifier,
+          code_challenge_method: "S256"
+        })
+      });
+      if (!response.ok) throw new Error(`OpenRouter key exchange failed (${response.status}).`);
+      const result = await response.json();
+      if (typeof result.key !== "string" || !result.key.trim()) {
+        throw new Error("OpenRouter returned an invalid API key.");
+      }
+      openRouterKey = result.key;
+      sessionStorage.setItem("openrouter-api-key", openRouterKey);
+      sessionStorage.removeItem("openrouter-oauth-verifier");
+      sessionStorage.removeItem("openrouter-oauth-state");
       setAuthStatus("user");
-      window.history.replaceState(null, "", window.location.pathname);
-    } else if (authResult === "denied") {
-      setAuthStatus("not found");
-      apiStatus.textContent = "sign-in cancelled";
-      window.history.replaceState(null, "", window.location.pathname);
-    }
-    if (hasLocalBackend) {
-      loadAuthStatus();
+    };
+    authButton.addEventListener("click", async () => {
+      if (authButton.dataset.action !== "logout") {
+        startOpenRouterOAuth().catch(error => {
+          console.error("Could not start OpenRouter sign-in:", error);
+        });
+        return;
+      }
+      openRouterKey = "";
+      sessionStorage.removeItem("openrouter-api-key");
+      setAuthStatus(defaultApiConfigured ? "default" : "not signed in");
       loadModels();
-    } else {
-      authButton.disabled = true;
-      apiStatus.textContent = "unavailable";
-      modelSelect.textContent = "Use --web mode";
-      modelSelect.classList.add("web-mode-notice");
-    }
+    });
+    setAuthStatus(openRouterKey ? "user" : "not signed in");
+    loadApiStatus();
+    finishOpenRouterOAuth()
+      .then(loadModels)
+      .catch(error => {
+        console.error("OpenRouter sign-in failed:", error);
+      });
 
-    const graph = JSON.parse(document.getElementById("graph-data").textContent);
-    const embeddedSources = JSON.parse(document.getElementById("source-data").textContent);
+    const initialGraph = JSON.parse(document.getElementById("graph-data").textContent);
+    let graph = structuredClone(initialGraph);
+    embeddedSources = JSON.parse(document.getElementById("source-data").textContent);
+    const systemPrompt = JSON.parse(document.getElementById("system-prompt").textContent);
+    const browserCorePromise = (async () => {
+      const binary = Uint8Array.from(
+        atob(document.getElementById("codemap-core-wasm").textContent.trim()),
+        character => character.charCodeAt(0)
+      );
+      await wasm_bindgen({module_or_path: binary});
+      return wasm_bindgen;
+    })();
+    const callBrowserCore = async (exportName, requestValue) => {
+      const core = await browserCorePromise;
+      const result = JSON.parse(core[exportName](JSON.stringify(requestValue)));
+      if (result.error) throw new Error(result.error);
+      return result;
+    };
+    const filterIgnoredInWasm = async files => {
+      const result = await callBrowserCore("filter_ignored_files", {
+        files: files.map(({path}) => ({path})),
+        gitignores: files
+          .filter(({path}) => path.split("/").at(-1) === ".gitignore")
+          .map(({path, contents}) => ({path, contents}))
+      });
+      return new Set(result.ignored);
+    };
+    const validateInWasm = async (source, files) => {
+      const result = await callBrowserCore("validate_graph", {
+        source,
+        files: files.map(({path, contents}) => ({path, contents}))
+      });
+      return {
+        ...result.graph,
+        direction: result.graph.direction === "LeftRight" ? "LR" : "TD",
+        width: 320,
+        height: 200,
+        nodes: result.graph.nodes.map(node => ({...node, width: 210, height: 131})),
+        edges: result.graph.edges.map(edge => ({
+          ...edge,
+          arrow_start: edge.arrow_start,
+          arrow_end: edge.arrow_end
+        }))
+      };
+    };
     const svg = document.getElementById("graph-svg");
     const main = document.querySelector("main");
     const canvas = document.querySelector(".canvas");
@@ -1510,6 +2100,12 @@
       pageHeader.style.flexBasis = `${size}px`;
       resizeHandle.setAttribute("aria-valuenow", String(Math.round(size)));
     };
+    if (savedSidebarWidth !== null) resizeSidebar(savedSidebarWidth);
+    const persistSidebarWidth = () => {
+      const dimension = narrowLayout.matches ? "height" : "width";
+      savedSidebarWidth = pageHeader.getBoundingClientRect()[dimension];
+      saveSetting(SAVED_SIDEBAR_WIDTH_KEY, savedSidebarWidth);
+    };
     resizeHandle.addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
       event.preventDefault();
@@ -1528,6 +2124,7 @@
     const finishSidebarResize = event => {
       if (event.pointerId !== resizePointerId) return;
       resizePointerId = null;
+      persistSidebarWidth();
       if (resizeHandle.hasPointerCapture(event.pointerId)) {
         resizeHandle.releasePointerCapture(event.pointerId);
       }
@@ -1544,6 +2141,7 @@
       const current = pageHeader.getBoundingClientRect()[vertical ? "height" : "width"];
       const step = event.shiftKey ? 40 : 10;
       resizeSidebar(current + (event.key === increment ? step : -step));
+      persistSidebarWidth();
     });
     window.addEventListener("resize", updateResizeHandle);
     narrowLayout.addEventListener("change", updateResizeHandle);
@@ -1605,7 +2203,105 @@
     const libavoidWasmUrl = `data:application/wasm;base64,${
       document.getElementById("libavoid-wasm").textContent.trim()
     }`;
-    let activeRoutingSession = null;
+    const createRoutingWorker = () => {
+      const bundle = [...document.scripts]
+        .find(script => script.textContent.includes("var ElkjsLibavoid = "));
+      if (!bundle) throw new Error("Could not load the graph-routing WebAssembly bundle.");
+      const workerRuntime = `
+        let session;
+        self.onmessage = async ({data}) => {
+          try {
+            if (data.type === "init") {
+              await ElkjsLibavoid.init(data.wasmUrl);
+              session = await ElkjsLibavoid.createRoutingSession(data.graph, data.options);
+            } else if (data.type === "move") {
+              session.moveNode(data.nodeId, data.position);
+            }
+            self.postMessage({id: data.id, routes: [...session.processTransaction().entries()]});
+          } catch (error) {
+            self.postMessage({id: data.id, error: error.message || String(error)});
+          }
+        };
+      `;
+      const workerUrl = URL.createObjectURL(new Blob(
+        [bundle.textContent, workerRuntime],
+        {type: "text/javascript"}
+      ));
+      const worker = new Worker(workerUrl);
+      const requests = new Map();
+      let nextRequestId = 0;
+      let workerFailure = null;
+      const failRequests = error => {
+        for (const {reject} of requests.values()) reject(error);
+        requests.clear();
+      };
+      worker.addEventListener("message", ({data}) => {
+        const request = requests.get(data.id);
+        if (!request) return;
+        requests.delete(data.id);
+        if (data.error) request.reject(new Error(data.error));
+        else request.resolve(new Map(data.routes));
+      });
+      worker.addEventListener("error", event => {
+        workerFailure = new Error(event.message || "Graph-routing worker failed.");
+        failRequests(workerFailure);
+      });
+      return {
+        request(type, payload) {
+          if (workerFailure) return Promise.reject(workerFailure);
+          const id = nextRequestId++;
+          return new Promise((resolve, reject) => {
+            requests.set(id, {resolve, reject});
+            try {
+              worker.postMessage({id, type, ...payload});
+            } catch (error) {
+              requests.delete(id);
+              reject(error);
+            }
+          });
+        },
+        destroy() {
+          failRequests(new Error("Graph-routing worker was replaced."));
+          worker.terminate();
+          URL.revokeObjectURL(workerUrl);
+        }
+      };
+    };
+    let activeRoutingWorker = null;
+
+    const combineReverseDirectedEdges = edges => {
+      const combined = [];
+      const used = new Set();
+      const directionOf = edge => edge.arrow_end
+        ? [edge.from, edge.to]
+        : [edge.to, edge.from];
+      for (let index = 0; index < edges.length; index++) {
+        if (used.has(index)) continue;
+        const edge = {...edges[index]};
+        const isSingleDirection = edge.arrow_start !== edge.arrow_end;
+        if (isSingleDirection && edge.from !== edge.to) {
+          const [source, target] = directionOf(edge);
+          const reverseIndex = edges.findIndex((candidate, candidateIndex) => {
+            if (candidateIndex <= index || used.has(candidateIndex) ||
+              candidate.arrow_start === candidate.arrow_end ||
+              candidate.label !== edge.label || candidate.dotted !== edge.dotted ||
+              candidate.from === candidate.to) {
+              return false;
+            }
+            const [candidateSource, candidateTarget] = directionOf(candidate);
+            return candidateSource === target && candidateTarget === source;
+          });
+          if (reverseIndex !== -1) {
+            edge.arrow_start = true;
+            edge.arrow_end = true;
+            used.add(reverseIndex);
+          }
+        }
+        used.add(index);
+        combined.push(edge);
+      }
+      return combined;
+    };
 
     const layoutGraphWithElk = async graph => {
       if (graph.nodes.length === 0) return [];
@@ -1651,51 +2347,8 @@
       graph.height = layout.height;
     };
 
-    let pollingInterval;
-    const poll = async () => {
-      try {
-        const after = lastRenderedGenerationId === null
-          ? ""
-          : `?after=${lastRenderedGenerationId}`;
-        const response = await fetch(`/api/poll${after}`, {cache: "no-store"});
-        if (!response.ok) {
-          throw new Error(`Polling request failed with status ${response.status}`);
-        }
-        const result = await response.json();
-        if (generationStarting ||
-          (activeGenerationId !== null && result.id < activeGenerationId)) return;
-        if (result.status === "running") {
-          generateButton.disabled = true;
-          generateButton.textContent = "Generating...";
-        } else if (result.status === "idle") {
-          generateButton.disabled = false;
-          generateButton.textContent = "Generate";
-        } else if (result.status === "ready") {
-          generateButton.disabled = false;
-          if (result.graph && lastRenderedGenerationId !== result.id) {
-            await renderGraph(result.graph);
-            lastRenderedGenerationId = result.id;
-            generateButton.textContent = "Generated";
-            generateButton.title = "";
-          }
-        } else if (result.status === "failed") {
-          generateButton.disabled = false;
-          if (lastRenderedGenerationId !== result.id) {
-            const message = result.error || "Graph generation failed.";
-            generateButton.textContent = generationFailureLabel(message);
-            generateButton.title = message;
-            lastRenderedGenerationId = result.id;
-          }
-        }
-      } catch (error) {
-        window.clearInterval(pollingInterval);
-        console.error("Polling stopped:", error);
-      }
-    };
-    poll();
-    pollingInterval = window.setInterval(poll, 3_000);
-
     const renderGraph = async graph => {
+    graph = {...graph, edges: combineReverseDirectedEdges(graph.edges)};
     const selfLoopRoute = node => {
       const clearance = 24;
       const centerX = node.x + node.width / 2;
@@ -1716,39 +2369,42 @@
         ? []
         : [{id: `edge-${index}`, source: edge.from, target: edge.to}]
     );
-    let nextRoutingSession = null;
+    let nextRoutingWorker = null;
     let latestRoutes = new Map();
     if (routingEdges.length > 0) {
-      await ElkjsLibavoid.init(libavoidWasmUrl);
-      nextRoutingSession = await ElkjsLibavoid.createRoutingSession({
-        id: "root",
-        children: graph.nodes.map(node => ({
-          id: node.id,
-          x: node.x,
-          y: node.y,
-          width: node.width,
-          height: node.height
-        })),
-        edges: routingEdges
-      }, {
-        routingType: "orthogonal",
-        shapeBufferDistance: 8,
-        crossingPenalty: 100,
-        idealNudgingDistance: 12,
-        nudgeOrthogonalSegmentsConnectedToShapes: true,
-        nudgeOrthogonalTouchingColinearSegments: true,
-        performUnifyingNudgingPreprocessingStep: true,
-        nudgeSharedPathsWithCommonEndPoint: true
-      });
+      const routingWorker = createRoutingWorker();
       try {
-        latestRoutes = nextRoutingSession.processTransaction();
+        latestRoutes = await routingWorker.request("init", {
+          wasmUrl: libavoidWasmUrl,
+          graph: {
+            id: "root",
+            children: graph.nodes.map(node => ({
+              id: node.id,
+              x: node.x,
+              y: node.y,
+              width: node.width,
+              height: node.height
+            })),
+            edges: routingEdges
+          },
+          options: {
+            routingType: "orthogonal",
+            shapeBufferDistance: 8,
+            idealNudgingDistance: 12,
+            nudgeOrthogonalSegmentsConnectedToShapes: true,
+            nudgeOrthogonalTouchingColinearSegments: true,
+            performUnifyingNudgingPreprocessingStep: true,
+            nudgeSharedPathsWithCommonEndPoint: true
+          }
+        });
+        nextRoutingWorker = routingWorker;
       } catch (error) {
-        nextRoutingSession.destroy();
+        routingWorker.destroy();
         throw error;
       }
     }
-    activeRoutingSession?.destroy();
-    activeRoutingSession = nextRoutingSession;
+    activeRoutingWorker?.destroy();
+    activeRoutingWorker = nextRoutingWorker;
     svg.replaceChildren();
     graphDetails.replaceChildren();
     if (graph.name) {
@@ -1914,24 +2570,23 @@
       };
     };
 
-    const positionLabel = (labelText, position) => {
-      labelText.setAttribute("x", position.x);
-      labelText.setAttribute("y", position.horizontal ? position.y : position.y - 5);
-      let textBounds = labelText.getBBox();
-      if (position.horizontal) {
-        const textCenterY = textBounds.y + textBounds.height / 2;
-        labelText.setAttribute(
-          "y",
-          Number(labelText.getAttribute("y")) + position.y - textCenterY
-        );
-        textBounds = labelText.getBBox();
-      }
+    const labelBoundsAt = (position, metrics) => {
+      const baseline = position.horizontal
+        ? position.y - metrics.offsetY - metrics.height / 2
+        : position.y - 5;
       return {
-        x: textBounds.x - 4,
-        y: textBounds.y - 2,
-        width: textBounds.width + 8,
-        height: textBounds.height + 4
+        x: position.x + metrics.offsetX - 4,
+        y: baseline + metrics.offsetY - 2,
+        width: metrics.width + 8,
+        height: metrics.height + 4
       };
+    };
+    const positionLabel = (labelText, position, metrics) => {
+      const baseline = position.horizontal
+        ? position.y - metrics.offsetY - metrics.height / 2
+        : position.y - 5;
+      labelText.setAttribute("x", position.x);
+      labelText.setAttribute("y", baseline);
     };
 
     const overlapArea = (first, second) => {
@@ -2037,56 +2692,95 @@
           rx: "4",
           ry: "4"
         });
-        labelText = makeSvgElement("text", {"text-anchor": "middle"});
+        labelText = makeSvgElement("text", {
+          "text-anchor": "middle",
+          x: "0",
+          y: "0"
+        });
         labelText.textContent = edge.label;
         label.append(labelBackground, labelText);
         edgeLabelLayer.append(label);
       }
       return {path, label, labelText, labelBackground};
     });
+    const labelMetrics = new Map(edgeElements
+      .filter(({labelText}) => labelText)
+      .map(({labelText}) => {
+        const bounds = labelText.getBBox();
+        return [labelText, {
+          offsetX: bounds.x,
+          offsetY: bounds.y,
+          width: bounds.width,
+          height: bounds.height
+        }];
+      }));
 
-    const dragRouteDelayFactor = 6;
-    const hideEdgesDelayThreshold = 100;
-    let nextDragRouteAt = 0;
-    const scheduleDragRoute = drag => {
-      if (drag.routeTimer !== null) return;
-      const delay = Math.max(0, nextDragRouteAt - performance.now());
-      drag.routeTimer = setTimeout(() => {
-        drag.routeTimer = null;
-        if (drag.active) updateEdgeRoutes({drag});
-      }, delay);
+    let routingRequestInFlight = false;
+    let pendingRoutingMove = null;
+    let latestRoutingRevision = 0;
+    let hideEdgesTimer = null;
+    const ROUTE_HIDE_DELAY_MS = 100;
+    const setConnectionsVisible = visible => {
+      const visibility = visible ? "visible" : "hidden";
+      edgeLayer.style.visibility = visibility;
+      edgeLabelLayer.style.visibility = visibility;
     };
-    const updateEdgeRoutes = ({drag = null, force = false, movedNode = null} = {}) => {
-      if (drag && !force) {
-        if (drag.clientX === drag.lastResolvedClientX &&
-          drag.clientY === drag.lastResolvedClientY) {
-          if (drag.routeTimer !== null) {
-            clearTimeout(drag.routeTimer);
-            drag.routeTimer = null;
-          }
-          edgeLayer.style.visibility = "visible";
-          return false;
+    const pumpRoutingQueue = () => {
+      if (routingRequestInFlight || !pendingRoutingMove || !activeRoutingWorker) return;
+      const move = pendingRoutingMove;
+      pendingRoutingMove = null;
+      routingRequestInFlight = true;
+      const worker = activeRoutingWorker;
+      if (hideEdgesTimer !== null) clearTimeout(hideEdgesTimer);
+      hideEdgesTimer = setTimeout(() => {
+        hideEdgesTimer = null;
+        if (worker === activeRoutingWorker &&
+          (routingRequestInFlight || pendingRoutingMove !== null)) {
+          setConnectionsVisible(false);
         }
-        const remainingDelay = nextDragRouteAt - performance.now();
-        if (remainingDelay > 0) {
-          if (remainingDelay > hideEdgesDelayThreshold) {
-            edgeLayer.style.visibility = "hidden";
+      }, Math.max(0, move.requestedAt + ROUTE_HIDE_DELAY_MS - performance.now()));
+      worker.request("move", move).then(routes => {
+        if (worker !== activeRoutingWorker) return;
+        routingRequestInFlight = false;
+        if (move.revision === latestRoutingRevision && pendingRoutingMove === null) {
+          if (hideEdgesTimer !== null) {
+            clearTimeout(hideEdgesTimer);
+            hideEdgesTimer = null;
           }
-          scheduleDragRoute(drag);
-          return false;
+          latestRoutes = routes;
+          updateEdgeRoutes();
+        } else {
+          pumpRoutingQueue();
         }
+      }).catch(error => {
+        if (worker !== activeRoutingWorker) return;
+        routingRequestInFlight = false;
+        if (pendingRoutingMove !== null) {
+          pumpRoutingQueue();
+        } else {
+          if (hideEdgesTimer !== null) {
+            clearTimeout(hideEdgesTimer);
+            hideEdgesTimer = null;
+          }
+          setConnectionsVisible(true);
+        }
+        console.error("Graph edge routing failed:", error);
+      });
+    };
+    const queueRoutingMove = node => {
+      if (!activeRoutingWorker) {
+        updateEdgeRoutes();
+        return;
       }
-      if (drag && drag.routeTimer !== null) {
-        clearTimeout(drag.routeTimer);
-        drag.routeTimer = null;
-      }
-
-      const startedAt = performance.now();
-      const nodeToMove = movedNode || (drag && nodesById.get(drag.nodeId));
-      if (nodeToMove && activeRoutingSession) {
-        activeRoutingSession.moveNode(nodeToMove.id, {x: nodeToMove.x, y: nodeToMove.y});
-        latestRoutes = activeRoutingSession.processTransaction();
-      }
+      pendingRoutingMove = {
+        nodeId: node.id,
+        position: {x: node.x, y: node.y},
+        revision: ++latestRoutingRevision,
+        requestedAt: performance.now()
+      };
+      pumpRoutingQueue();
+    };
+    const updateEdgeRoutes = () => {
       const routes = computeRoutes();
       const occupiedBounds = graph.nodes.map(node => ({
         x: node.x,
@@ -2108,12 +2802,14 @@
         const {path, labelText, labelBackground} = edgeElements[index];
         path.setAttribute("d", roundedRoutePath(visiblePoints));
         if (labelText && labelBackground) {
+          const metrics = labelMetrics.get(labelText);
+          if (!metrics) throw new Error("Missing edge label measurements");
           const labelFraction = edge.arrow_start !== edge.arrow_end ? 3 / 4 : 1 / 2;
           let selectedPosition = positionAtRouteFraction(visiblePoints, labelFraction);
           let selectedBounds = null;
           let leastOverlap = Infinity;
           const scorePosition = position => {
-            const bounds = positionLabel(labelText, position);
+            const bounds = labelBoundsAt(position, metrics);
             const overlap = occupiedBounds.reduce(
               (total, previous) => total + overlapArea(bounds, previous),
               0
@@ -2127,7 +2823,7 @@
           };
           let foundFreePosition = scorePosition(selectedPosition) === 0;
           let intervals = [[0, labelFraction], [labelFraction, 1]];
-          for (let depth = 0; depth < 5 && !foundFreePosition; depth++) {
+          for (let depth = 0; depth < 3 && !foundFreePosition; depth++) {
             const nextIntervals = [];
             for (const [start, end] of intervals) {
               const fraction = (start + end) / 2;
@@ -2143,7 +2839,7 @@
             intervals = nextIntervals;
           }
           if (selectedPosition && selectedBounds) {
-            positionLabel(labelText, selectedPosition);
+            positionLabel(labelText, selectedPosition, metrics);
             labelBackground.setAttribute("x", selectedBounds.x);
             labelBackground.setAttribute("y", selectedBounds.y);
             labelBackground.setAttribute("width", selectedBounds.width);
@@ -2152,16 +2848,7 @@
           }
         }
       });
-      edgeLayer.style.visibility = "visible";
-      const elapsed = performance.now() - startedAt;
-      nextDragRouteAt = drag && !force
-        ? performance.now() + elapsed * dragRouteDelayFactor
-        : 0;
-      if (drag) {
-        drag.lastResolvedClientX = drag.clientX;
-        drag.lastResolvedClientY = drag.clientY;
-        if (!force) scheduleDragRoute(drag);
-      }
+      setConnectionsVisible(true);
       return true;
     };
     updateEdgeRoutes();
@@ -2328,6 +3015,18 @@
       updateNodeLayout();
 
       let drag = null;
+      const applyDragPosition = () => {
+        if (!drag) return;
+        const deltaX = (drag.clientX - drag.lastX) * drag.scaleX;
+        const deltaY = (drag.clientY - drag.lastY) * drag.scaleY;
+        drag.lastX = drag.clientX;
+        drag.lastY = drag.clientY;
+        if (deltaX === 0 && deltaY === 0) return false;
+        node.x += deltaX;
+        node.y += deltaY;
+        group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+        return true;
+      };
       moveAction.control.addEventListener("pointerdown", event => {
         if (event.button !== 0) return;
         event.preventDefault();
@@ -2335,15 +3034,12 @@
         const bounds = svg.getBoundingClientRect();
         drag = {
           pointerId: event.pointerId,
-          nodeId: node.id,
           clientX: event.clientX,
           clientY: event.clientY,
+          lastX: event.clientX,
+          lastY: event.clientY,
           scaleX: viewWidth / bounds.width,
-          scaleY: viewHeight / bounds.height,
-          lastResolvedClientX: event.clientX,
-          lastResolvedClientY: event.clientY,
-          routeTimer: null,
-          active: true
+          scaleY: viewHeight / bounds.height
         };
         group.classList.add("dragging");
         group.setPointerCapture(event.pointerId);
@@ -2351,15 +3047,18 @@
 
       group.addEventListener("pointermove", event => {
         if (!drag || event.pointerId !== drag.pointerId) return;
-        const deltaX = (event.clientX - drag.clientX) * drag.scaleX;
-        const deltaY = (event.clientY - drag.clientY) * drag.scaleY;
         drag.clientX = event.clientX;
         drag.clientY = event.clientY;
-        node.x += deltaX;
-        node.y += deltaY;
-        group.setAttribute("transform", `translate(${node.x} ${node.y})`);
-        updateSvgViewport();
-        updateEdgeRoutes({drag});
+        if (drag.frame === undefined) {
+          drag.frame = requestAnimationFrame(() => {
+            if (!drag) return;
+            drag.frame = undefined;
+            if (applyDragPosition()) {
+              updateSvgViewport();
+              queueRoutingMove(node);
+            }
+          });
+        }
       });
       moveAction.control.addEventListener("keydown", event => {
         const movement = {
@@ -2374,30 +3073,83 @@
         node.y += movement[1];
         group.setAttribute("transform", `translate(${node.x} ${node.y})`);
         updateSvgViewport();
-        updateEdgeRoutes({force: true, movedNode: node});
+        queueRoutingMove(node);
       });
 
       const finishDragging = event => {
         if (!drag || event.pointerId !== drag.pointerId) return;
-        drag.active = false;
-        if (drag.routeTimer !== null) {
-          clearTimeout(drag.routeTimer);
-          drag.routeTimer = null;
+        drag.clientX = event.clientX;
+        drag.clientY = event.clientY;
+        if (drag.frame !== undefined) {
+          cancelAnimationFrame(drag.frame);
+          drag.frame = undefined;
         }
+        applyDragPosition();
         drag = null;
         group.classList.remove("dragging");
         if (group.hasPointerCapture(event.pointerId)) {
           group.releasePointerCapture(event.pointerId);
         }
-        updateEdgeRoutes({force: true, movedNode: node});
+        updateSvgViewport();
+        queueRoutingMove(node);
       };
       group.addEventListener("pointerup", finishDragging);
       group.addEventListener("pointercancel", finishDragging);
       group.addEventListener("lostpointercapture", finishDragging);
     }
     };
-    renderGraph(graph).catch(error => {
-      console.error("Graph layout failed:", error);
+    const restoreWorkspace = async () => {
+      const restoreErrors = [];
+      try {
+        const savedFiles = await getWorkspaceItem("project-files");
+        if (isStoredFileList(savedFiles)) {
+          projectFiles = savedFiles;
+          embeddedSources = Object.fromEntries(
+            projectFiles.map(({path, contents}) => [path, contents])
+          );
+          updateUploadButton();
+          uploadPickerStatus.textContent = `${projectFiles.length} saved project files restored from this browser.`;
+        }
+      } catch (error) {
+        restoreErrors.push(`project files: ${error.message}`);
+      }
+      try {
+        const savedGraph = await getWorkspaceItem("generated-graph");
+        if (isStoredGeneratedGraph(savedGraph)) {
+          graph = savedGraph.graph;
+          generatedGraphSource = savedGraph.source;
+          nodeSummaries = getStoredNodeSummaries(savedGraph.nodeSummaries, graph);
+        } else if (isStoredGraph(savedGraph)) {
+          graph = savedGraph;
+          nodeSummaries = {};
+          const legacyDebug = await getWorkspaceItem("generated-debug");
+          if (typeof legacyDebug?.graphSource === "string") {
+            generatedGraphSource = legacyDebug.graphSource;
+          }
+        }
+      } catch (error) {
+        restoreErrors.push(`generated graph: ${error.message}`);
+      }
+      try {
+        await renderGraph(graph);
+      } catch (error) {
+        restoreErrors.push(`graph layout: ${error.message}`);
+        console.error("Graph layout failed:", error);
+      }
+      updateExportButtons();
+      if (restoreErrors.length > 0) {
+        console.error(`Could not restore ${restoreErrors.join("; ")}`);
+      }
+      uploadCodeButton.disabled = false;
+      generateButton.disabled = false;
+    };
+    restoreWorkspace().catch(error => {
+      uploadCodeButton.disabled = false;
+      generateButton.disabled = false;
+      console.error("Workspace restore failed:", error);
+      renderGraph(graph).catch(layoutError => {
+        console.error("Graph layout failed:", layoutError);
+      });
     });
   </script>
 </body>

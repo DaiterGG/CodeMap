@@ -23,11 +23,15 @@ const LIBAVOID_WASM_MARKER: &str = "{{LIBAVOID_WASM}}";
 const LIBAVOID_LICENSE_MARKER: &str = "{{LIBAVOID_LICENSE}}";
 const LIBAVOID_JS_LICENSE_MARKER: &str = "{{LIBAVOID_JS_LICENSE}}";
 const GRAPH_DETAILS_MARKER: &str = "{{GRAPH_DETAILS}}";
-const SERVER_MODE_MARKER: &str = "{{SERVER_MODE}}";
 const HIGHLIGHT_JS_MARKER: &str = "{{HIGHLIGHT_JS}}";
+const CODEMAP_WASM_MARKER: &str = "{{CODEMAP_WASM}}";
+const CODEMAP_BINDINGS_JS_MARKER: &str = "{{CODEMAP_BINDINGS_JS}}";
+const SYSTEM_PROMPT_MARKER: &str = "{{SYSTEM_PROMPT_JSON}}";
 const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
 const LIBAVOID_JS: &str = include_str!("../public/vendor/elkjs-libavoid.bundled.js");
 const LIBAVOID_WASM: &[u8] = include_bytes!("../public/vendor/libavoid.wasm");
+const CODEMAP_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/codemap-core.wasm"));
+const CODEMAP_BINDINGS_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/codemap_core.js"));
 const LIBAVOID_LICENSE: &str = include_str!("../public/vendor/elkjs-libavoid.LICENSE");
 const LIBAVOID_JS_LICENSE: &str = include_str!("../public/vendor/libavoid-js.LICENSE");
 const NODE_WIDTH: f64 = 210.0;
@@ -42,7 +46,7 @@ pub fn write_response_page(_thought: Option<&str>, response: &str) -> io::Result
 
 pub fn write_graph_page(graph: &Graph, graph_source: &str) -> io::Result<PathBuf> {
     let graph_json = serialize_graph_document(graph)?;
-    let html = render_page_html(graph, &graph_json, "{}", false);
+    let html = render_page_html(graph, &graph_json, "{}");
     let generated_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("generated");
@@ -121,7 +125,7 @@ pub fn finalize_response_history_page_with_sources(
     let graph = crate::graph_file::parse_graph(&final_step.response.content)?;
     let graph_json = serialize_graph_document(&graph)?;
     let source_json = serialize_embedded_sources(&graph, source_root)?;
-    let html = render_page_html(&graph, &graph_json, &source_json, false);
+    let html = render_page_html(&graph, &graph_json, &source_json);
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
     fs::write(output_dir.join("graph.json"), &graph_json)?;
@@ -173,7 +177,7 @@ fn serialize_embedded_sources(graph: &Graph, source_root: Option<&Path>) -> io::
 fn write_response_files(generated_dir: &Path, response: &str) -> io::Result<PathBuf> {
     let graph = crate::graph_file::parse_graph(response)?;
     let graph_json = serialize_graph_document(&graph)?;
-    let html = render_page_html(&graph, &graph_json, "{}", false);
+    let html = render_page_html(&graph, &graph_json, "{}");
     let raw_graph = crate::graph_file::normalize_graph_source(response);
 
     fs::create_dir_all(generated_dir)?;
@@ -258,12 +262,7 @@ pub(crate) fn serialize_graph_document(graph: &Graph) -> io::Result<String> {
     Ok(json.replace('<', "\\u003c"))
 }
 
-fn render_page_html(
-    graph: &Graph,
-    graph_json: &str,
-    source_json: &str,
-    server_mode: bool,
-) -> String {
+fn render_page_html(graph: &Graph, graph_json: &str, source_json: &str) -> String {
     let title = graph
         .name
         .as_deref()
@@ -301,13 +300,16 @@ fn render_page_html(
             &escape_html(LIBAVOID_JS_LICENSE),
         )
         .replace(HIGHLIGHT_JS_MARKER, HIGHLIGHT_JS)
+        .replace(CODEMAP_BINDINGS_JS_MARKER, CODEMAP_BINDINGS_JS)
+        .replace(CODEMAP_WASM_MARKER, &STANDARD.encode(CODEMAP_WASM))
         .replace(
-            SERVER_MODE_MARKER,
-            if server_mode { "true" } else { "false" },
+            SYSTEM_PROMPT_MARKER,
+            &serde_json::to_string(crate::prompts::nodegraph())
+                .expect("the system prompt can be serialized as JSON"),
         )
 }
 
-pub(crate) fn render_web_index(server_mode: bool) -> String {
+pub(crate) fn render_web_index() -> String {
     let graph = Graph {
         direction: GraphDirection::TopDown,
         name: None,
@@ -318,7 +320,7 @@ pub(crate) fn render_web_index(server_mode: bool) -> String {
     };
     let graph_json =
         serialize_graph_document(&graph).expect("an empty graph can always be serialized");
-    render_page_html(&graph, &graph_json, "{}", server_mode)
+    render_page_html(&graph, &graph_json, "{}")
 }
 
 fn format_history(history: &[Step], validation_errors: &[Option<String>]) -> String {
@@ -451,51 +453,121 @@ Process -.->|optional| Output
 
     #[test]
     fn web_index_leaves_graph_metadata_empty_for_javascript() {
-        let html = render_web_index(false);
+        let html = render_web_index();
         assert!(html.contains("<div class=\"graph-details\" id=\"graph-details\"></div>"));
         assert!(!html.contains("<h1>CodeMap</h1>"));
         assert!(!html.contains("{{GRAPH_DETAILS}}"));
-        assert!(html.contains("data-server-mode=\"false\""));
-        assert!(html.contains("id=\"generation-settings-button\""));
-        assert!(html.contains("#model-select:disabled"));
-        assert!(html.contains("id=\"generation-settings-dialog\""));
-        assert!(html.contains("id=\"include-gitignored\" type=\"checkbox\""));
-        assert!(html.contains("id=\"include-non-text\" type=\"checkbox\""));
-        assert!(html.contains("id=\"ignore-big-files\" type=\"checkbox\""));
-        assert!(html.contains("ignore_big_files: ignoreBigFiles.checked"));
-        assert!(html.contains("id=\"parallel-generation\" type=\"checkbox\""));
-        assert!(html.contains("parallel: parallelGeneration.checked"));
+        assert!(!html.contains("data-server-mode"));
+        assert!(html.contains("id=\"upload-files\" type=\"file\" webkitdirectory"));
+        assert!(html.contains("id=\"codemap-core-wasm\""));
+        assert!(html.contains("generate_multiagent"));
+        assert!(html.contains("filter_ignored_files"));
+        assert!(html.contains("await wasm_bindgen({module_or_path: binary})"));
+        assert!(html.contains("return wasm_bindgen;"));
+        assert!(html.contains("createRoutingWorker"));
+        assert!(html.contains("new Worker(workerUrl)"));
+        assert!(html.contains("const getSourceFileContents = async path => {"));
+        assert!(html.contains("await getWorkspaceItem(\"project-files\")"));
+        assert!(
+            html.contains(
+                "Only the latest uploaded project, graph, and generated node summaries are saved in this browser"
+            )
+        );
+        assert!(html.contains("core.generate_node_summary(request, estimateJson =>"));
+        assert!(!html.contains("https://openrouter.ai/api/v1/chat/completions"));
+        assert!(html.contains("summaryContextEstimate.textContent"));
+        assert!(html.contains("node-summary-result"));
+        assert!(
+            html.contains("const SAVED_SUMMARY_MODEL_KEY = \"codemap-summary-selected-model\";")
+        );
+        assert!(html.contains("modelSelectionContext === \"summary\""));
+        assert!(html.contains("saveSetting(SAVED_SUMMARY_MODEL_KEY, summaryModelId)"));
+        assert!(html.contains("combineReverseDirectedEdges"));
+        assert!(
+            html.contains("graph = {...graph, edges: combineReverseDirectedEdges(graph.edges)}")
+        );
+        assert!(html.contains("queueRoutingMove(node)"));
+        assert!(html.contains("ROUTE_HIDE_DELAY_MS = 100"));
+        assert!(html.contains("setConnectionsVisible(false)"));
+        assert!(html.contains("setConnectionsVisible(true)"));
+        assert!(html.contains("edgeLayer.style.visibility = visibility"));
+        assert!(html.contains("edgeLabelLayer.style.visibility = visibility"));
+        assert!(html.contains("id=\"sequential-generation\""));
+        assert!(html.contains("Generate repository chunks sequentially"));
+        assert!(html.contains("parallel: !sequentialGeneration.checked"));
+        assert!(html.contains("class=\"setting-help\""));
         assert!(html.contains("id=\"openrouter-sign-in-button\""));
-    }
-
-    #[test]
-    fn server_web_index_is_marked_for_the_browser() {
-        let html = render_web_index(true);
-        assert!(html.contains("data-server-mode=\"true\""));
-        assert!(!html.contains("{{SERVER_MODE}}"));
+        assert!(html.contains("id=\"api-status\""));
+        assert!(html.contains("fetch(\"/api/auth-status\""));
+        assert!(html.contains("/api/openrouter/chat/completions"));
+        assert!(html.contains("const DEFAULT_MODEL_ID = \"openrouter/free\";"));
+        assert!(html.contains("const recommendedModelIds = new Set([DEFAULT_MODEL_ID]);"));
+        assert!(html.contains("availableModels.find(model => model.id === DEFAULT_MODEL_ID)"));
+        assert!(html.contains("summaryControls.append(\n        modelControls,\n        generationSettingsButton,"));
+        assert!(html.contains("generationSettingsButtonParent.insertBefore("));
+        assert!(html.contains("id=\"export-button\""));
+        assert!(html.contains("Import / Export"));
+        assert!(html.contains("id=\"export-dialog\""));
+        assert!(html.contains("id=\"import-graph-file\""));
+        assert!(html.contains("accept=\".gr,.json,application/json,text/plain\""));
+        assert!(html.contains("parse_graph_source"));
+        assert!(html.contains("prepareGraphForDisplay(imported)"));
+        assert!(html.contains("Download graph.gr"));
+        assert!(html.contains(
+            "downloadTextFile(\"graph.gr\", generatedGraphSource, \"application/octet-stream\")"
+        ));
+        assert!(html.contains("Download graph.json"));
+        assert!(html.contains("isStoredGeneratedGraph(savedGraph)"));
+        assert!(html.contains("nodeSummaries: {...nodeSummaries}"));
+        assert!(
+            html.contains(
+                "nodeSummaries = getStoredNodeSummaries(savedGraph.nodeSummaries, graph)"
+            )
+        );
+        assert!(html.contains("nodeSummaries = {}"));
+        assert!(html.contains("if (graph !== graphForSummary)"));
+        assert!(html.contains("summaryResult.textContent = nodeSummaries[node.id] || \"\""));
+        assert!(html.contains("source: generatedGraphSource"));
+        assert!(html.contains("generatedGraphSource = savedGraph.source"));
+        assert!(html.contains("legacyDebug?.graphSource"));
+        assert!(!html.contains("export-prompt"));
+        assert!(!html.contains("export-response"));
+        assert!(html.contains("indexedDB.open(WORKSPACE_DB_NAME, 1)"));
+        assert!(html.contains("codemap-selected-model"));
+        assert!(html.contains("codemap-sidebar-width"));
+        assert!(!html.contains("Forget saved project"));
+        assert!(html.contains(&STANDARD.encode(CODEMAP_WASM)));
+        assert!(!html.contains(CODEMAP_WASM_MARKER));
+        assert!(!html.contains(SYSTEM_PROMPT_MARKER));
+        assert!(!html.contains("/api/poll"));
+        assert!(!html.contains("/api/generate"));
     }
 
     #[test]
     fn embeds_local_syntax_highlighter_in_web_index() {
-        let html = render_web_index(false);
+        let html = render_web_index();
         assert!(html.contains("hljs.highlightAuto"));
         assert!(!html.contains(HIGHLIGHT_JS_MARKER));
     }
 
     #[test]
     fn embeds_elk_and_defers_node_placement_to_the_browser() {
-        let html = render_web_index(false);
+        let html = render_web_index();
         assert!(html.contains("org.eclipse.elk.layered"));
         assert!(html.contains("elk.edgeRouting"));
         assert!(html.contains("createRoutingSession"));
         assert!(html.contains("routingType: \"orthogonal\""));
-        assert!(html.contains("crossingPenalty: 100"));
+        assert!(html.contains("shapeBufferDistance: 8"));
         assert!(html.contains("idealNudgingDistance: 12"));
         assert!(html.contains("nudgeOrthogonalSegmentsConnectedToShapes: true"));
         assert!(html.contains("nudgeOrthogonalTouchingColinearSegments: true"));
         assert!(html.contains("performUnifyingNudgingPreprocessingStep: true"));
         assert!(html.contains("nudgeSharedPathsWithCommonEndPoint: true"));
-        assert!(html.contains("activeRoutingSession.moveNode"));
+        assert!(!html.contains("crossingPenalty:"));
+        assert!(html.contains("requestAnimationFrame(() => {"));
+        assert!(html.contains("const labelBoundsAt = (position, metrics) => {"));
+        assert!(html.contains("depth < 3 && !foundFreePosition"));
+        assert!(html.contains("session.processTransaction()"));
         assert!(html.contains("data:application/wasm;base64,"));
         assert!(!html.contains(ELK_JS_MARKER));
         assert!(!html.contains(ELK_LICENSE_MARKER));
