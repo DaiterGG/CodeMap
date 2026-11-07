@@ -1,4 +1,6 @@
 /target
+/publish
+.env
 /docs/
 /examples
 AGENTS.md

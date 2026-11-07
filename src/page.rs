@@ -3,8 +3,6 @@
 
 use crate::graph_parser::{Graph, GraphDirection};
 use crate::step::{Role, Step};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -13,27 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const TEMPLATE: &str = include_str!("../public/index.html");
-const GRAPH_JSON_MARKER: &str = "{{GRAPH_JSON}}";
-const SOURCE_JSON_MARKER: &str = "{{SOURCE_JSON}}";
-const ELK_JS_MARKER: &str = "{{ELK_JS}}";
-const ELK_LICENSE_MARKER: &str = "{{ELK_LICENSE}}";
-const LIBAVOID_JS_MARKER: &str = "{{LIBAVOID_JS}}";
-const LIBAVOID_WASM_MARKER: &str = "{{LIBAVOID_WASM}}";
-const LIBAVOID_LICENSE_MARKER: &str = "{{LIBAVOID_LICENSE}}";
-const LIBAVOID_JS_LICENSE_MARKER: &str = "{{LIBAVOID_JS_LICENSE}}";
-const GRAPH_DETAILS_MARKER: &str = "{{GRAPH_DETAILS}}";
-const HIGHLIGHT_JS_MARKER: &str = "{{HIGHLIGHT_JS}}";
-const CODEMAP_WASM_MARKER: &str = "{{CODEMAP_WASM}}";
-const CODEMAP_BINDINGS_JS_MARKER: &str = "{{CODEMAP_BINDINGS_JS}}";
-const SYSTEM_PROMPT_MARKER: &str = "{{SYSTEM_PROMPT_JSON}}";
-const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
-const LIBAVOID_JS: &str = include_str!("../public/vendor/elkjs-libavoid.bundled.js");
-const LIBAVOID_WASM: &[u8] = include_bytes!("../public/vendor/libavoid.wasm");
 const CODEMAP_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/codemap-core.wasm"));
 const CODEMAP_BINDINGS_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/codemap_core.js"));
-const LIBAVOID_LICENSE: &str = include_str!("../public/vendor/elkjs-libavoid.LICENSE");
-const LIBAVOID_JS_LICENSE: &str = include_str!("../public/vendor/libavoid-js.LICENSE");
 const NODE_WIDTH: f64 = 210.0;
 const NODE_HEIGHT: f64 = 131.0;
 
@@ -280,36 +259,19 @@ fn render_page_html(graph: &Graph, graph_json: &str, source_json: &str) -> Strin
             )
         })
         .unwrap_or_default();
-    TEMPLATE
-        .replace(GRAPH_DETAILS_MARKER, &format!("{title}{description}"))
-        .replace(GRAPH_JSON_MARKER, graph_json)
-        .replace(SOURCE_JSON_MARKER, source_json)
-        .replace(
-            ELK_JS_MARKER,
-            include_str!("../public/vendor/elk.bundled.js"),
-        )
-        .replace(
-            ELK_LICENSE_MARKER,
-            &escape_html(include_str!("../public/vendor/elk.LICENSE")),
-        )
-        .replace(LIBAVOID_JS_MARKER, LIBAVOID_JS)
-        .replace(LIBAVOID_WASM_MARKER, &STANDARD.encode(LIBAVOID_WASM))
-        .replace(LIBAVOID_LICENSE_MARKER, &escape_html(LIBAVOID_LICENSE))
-        .replace(
-            LIBAVOID_JS_LICENSE_MARKER,
-            &escape_html(LIBAVOID_JS_LICENSE),
-        )
-        .replace(HIGHLIGHT_JS_MARKER, HIGHLIGHT_JS)
-        .replace(CODEMAP_BINDINGS_JS_MARKER, CODEMAP_BINDINGS_JS)
-        .replace(CODEMAP_WASM_MARKER, &STANDARD.encode(CODEMAP_WASM))
-        .replace(
-            SYSTEM_PROMPT_MARKER,
-            &serde_json::to_string(crate::prompts::nodegraph())
-                .expect("the system prompt can be serialized as JSON"),
-        )
+    crate::page_template::render_page_html(
+        &format!("{title}{description}"),
+        graph_json,
+        source_json,
+        CODEMAP_WASM,
+        CODEMAP_BINDINGS_JS,
+        crate::prompts::nodegraph(),
+        "",
+    )
 }
 
-pub(crate) fn render_web_index() -> String {
+#[cfg(test)]
+fn render_web_index() -> String {
     let graph = Graph {
         direction: GraphDirection::TopDown,
         name: None,
@@ -433,6 +395,18 @@ fn escape_html(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::graph_parser::parse;
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+
+    const CODEMAP_WASM_MARKER: &str = "{{CODEMAP_WASM}}";
+    const SYSTEM_PROMPT_MARKER: &str = "{{SYSTEM_PROMPT_JSON}}";
+    const HIGHLIGHT_JS_MARKER: &str = "{{HIGHLIGHT_JS}}";
+    const ELK_JS_MARKER: &str = "{{ELK_JS}}";
+    const ELK_LICENSE_MARKER: &str = "{{ELK_LICENSE}}";
+    const LIBAVOID_JS_MARKER: &str = "{{LIBAVOID_JS}}";
+    const LIBAVOID_WASM_MARKER: &str = "{{LIBAVOID_WASM}}";
+    const LIBAVOID_LICENSE_MARKER: &str = "{{LIBAVOID_LICENSE}}";
+    const LIBAVOID_JS_LICENSE_MARKER: &str = "{{LIBAVOID_JS_LICENSE}}";
 
     const GRAPH: &str = r#"<graph type="LR" name="Test graph" desc="Shows an input, transformation, and output">
 Input["<name>Input</name><desc>Read source</desc>"]
@@ -449,6 +423,22 @@ Process -.->|optional| Output
             escape_html("<script a=\"b\">Tom & Jerry's</script>"),
             "&lt;script a=&quot;b&quot;&gt;Tom &amp; Jerry&#39;s&lt;/script&gt;"
         );
+    }
+
+    #[test]
+    fn static_page_embeds_default_key_as_escaped_json() {
+        let html = crate::page_template::render_page_html(
+            "",
+            "{}",
+            "{}",
+            b"wasm",
+            "bindings",
+            "prompt",
+            "test-key</script>",
+        );
+
+        assert!(html.contains(r#""test-key\u003c/script>""#));
+        assert!(!html.contains("{{DEFAULT_API_KEY_JSON}}"));
     }
 
     #[test]
@@ -498,12 +488,16 @@ Process -.->|optional| Output
         assert!(html.contains("class=\"setting-help\""));
         assert!(html.contains("id=\"openrouter-sign-in-button\""));
         assert!(html.contains("id=\"api-status\""));
-        assert!(html.contains("fetch(\"/api/auth-status\""));
-        assert!(html.contains("/api/openrouter/chat/completions"));
+        assert!(html.contains("id=\"default-api-key\""));
+        assert!(html.contains("api_key: openRouterKey || defaultApiKey"));
+        assert!(!html.contains("/api/auth-status"));
+        assert!(!html.contains("/api/openrouter/chat/completions"));
         assert!(html.contains("const DEFAULT_MODEL_ID = \"openrouter/free\";"));
         assert!(html.contains("const recommendedModelIds = new Set([DEFAULT_MODEL_ID]);"));
         assert!(html.contains("availableModels.find(model => model.id === DEFAULT_MODEL_ID)"));
-        assert!(html.contains("summaryControls.append(\n        modelControls,\n        generationSettingsButton,"));
+        assert!(html.contains(
+            "summaryControls.append(\n        modelControls,\n        generationSettingsButton,"
+        ));
         assert!(html.contains("generationSettingsButtonParent.insertBefore("));
         assert!(html.contains("id=\"export-button\""));
         assert!(html.contains("Import / Export"));

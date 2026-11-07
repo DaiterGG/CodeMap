@@ -1,5 +1,4 @@
-//! Core modules for collecting code, generating and validating a custom graph,
-//! and exporting it as a Mermaid source file and a custom rendered HTML page.
+//! Core modules for validating graphs and rendering the browser application.
 
 pub mod files;
 pub mod graph_file;
@@ -8,7 +7,7 @@ pub mod llm;
 pub mod mermaid;
 pub mod multiagent;
 pub mod page;
+mod page_template;
 pub mod prompts;
 pub mod step;
 pub mod test_model;
-pub mod web;

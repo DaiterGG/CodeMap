@@ -1,13 +1,28 @@
 use std::env;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use std::process::Command;
+
+#[path = "src/page_template.rs"]
+mod page_template;
 
 const WASM_TARGET: &str = "wasm32-unknown-unknown";
 const WASM_PACKAGE: &str = "codemap-browser-core";
 const WASM_FILE: &str = "codemap_browser_core.wasm";
+const EMPTY_GRAPH_JSON: &str = r#"{"direction":"TD","name":null,"description":null,"width":320.0,"height":200.0,"nodes":[],"edges":[]}"#;
 
 fn main() {
+    println!("cargo:rerun-if-changed=src/page_template.rs");
+    println!("cargo:rerun-if-changed=public/index.html");
+    println!("cargo:rerun-if-changed=public/vendor/elk.bundled.js");
+    println!("cargo:rerun-if-changed=public/vendor/elk.LICENSE");
+    println!("cargo:rerun-if-changed=public/vendor/elkjs-libavoid.bundled.js");
+    println!("cargo:rerun-if-changed=public/vendor/libavoid.wasm");
+    println!("cargo:rerun-if-changed=public/vendor/elkjs-libavoid.LICENSE");
+    println!("cargo:rerun-if-changed=public/vendor/libavoid-js.LICENSE");
+    println!("cargo:rerun-if-changed=public/vendor/highlight.min.js");
+    println!("cargo:rerun-if-changed=prompts/nodegraph.txt");
     println!("cargo:rerun-if-changed=browser-core/Cargo.toml");
     println!("cargo:rerun-if-changed=browser-core/src/lib.rs");
     println!("cargo:rerun-if-changed=src/graph_parser.rs");
@@ -20,7 +35,11 @@ fn main() {
     println!("cargo:rerun-if-changed=prompts/redundant_connection.txt");
     println!("cargo:rerun-if-changed=prompts/source_reference_error.txt");
     println!("cargo:rerun-if-changed=prompts/partial_error.txt");
+    println!("cargo:rerun-if-changed=.env");
+    println!("cargo:rerun-if-changed=../.env");
     println!("cargo:rerun-if-changed=Cargo.lock");
+    println!("cargo:rerun-if-env-changed=OPEN_ROUTER_KEY");
+    println!("cargo:rerun-if-env-changed=OPEN_ROUTER");
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
     let target_dir = out_dir.join("wasm-target");
@@ -71,4 +90,61 @@ fn main() {
             wasm_source.display()
         )
     });
+
+    publish_page(&out_dir)
+        .unwrap_or_else(|error| panic!("could not assemble the static page in ./publish: {error}"));
+}
+
+fn publish_page(out_dir: &std::path::Path) -> io::Result<()> {
+    let api_key = configured_api_key()?;
+    let wasm = fs::read(out_dir.join("codemap-core.wasm"))?;
+    let bindings = fs::read_to_string(out_dir.join("codemap_core.js"))?;
+    let html = page_template::render_page_html(
+        "",
+        EMPTY_GRAPH_JSON,
+        "{}",
+        &wasm,
+        &bindings,
+        include_str!("prompts/nodegraph.txt"),
+        &api_key,
+    );
+    let publish_dir =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"))
+            .join("publish");
+    fs::create_dir_all(&publish_dir)?;
+    fs::write(publish_dir.join("index.html"), html)
+}
+
+fn configured_api_key() -> io::Result<String> {
+    let key_names = ["OPEN_ROUTER_KEY", "OPEN_ROUTER"];
+    if let Some(key) = key_names
+        .iter()
+        .find_map(|name| env::var(name).ok().filter(|key| !key.trim().is_empty()))
+    {
+        return Ok(key);
+    }
+
+    let manifest_dir =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"));
+    let root_env_path = manifest_dir.join(".env");
+    let parent_env_path = manifest_dir.parent().map(|parent| parent.join(".env"));
+    let env_path = if root_env_path.is_file() {
+        Some(root_env_path)
+    } else {
+        parent_env_path.filter(|path| path.is_file())
+    };
+
+    if let Some(path) = env_path {
+        dotenvy::from_path(&path).map_err(|error| {
+            io::Error::other(format!(
+                "could not load build-time environment from {}: {error}",
+                path.display()
+            ))
+        })?;
+    }
+
+    Ok(key_names
+        .iter()
+        .find_map(|name| env::var(name).ok().filter(|key| !key.trim().is_empty()))
+        .unwrap_or_default())
 }

@@ -915,6 +915,7 @@
   <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
   <script type="application/json" id="source-data">{{SOURCE_JSON}}</script>
   <script type="application/json" id="system-prompt">{{SYSTEM_PROMPT_JSON}}</script>
+  <script type="application/json" id="default-api-key">{{DEFAULT_API_KEY_JSON}}</script>
   <pre hidden id="codemap-core-wasm">{{CODEMAP_WASM}}</pre>
   <pre hidden id="elk-license">{{ELK_LICENSE}}</pre>
   <pre hidden id="elkjs-libavoid-license">{{LIBAVOID_LICENSE}}</pre>
@@ -962,7 +963,7 @@
     let projectFiles = [];
     let embeddedSources = {};
     let generatedGraphSource = "";
-    let defaultApiConfigured = false;
+    const defaultApiKey = JSON.parse(document.getElementById("default-api-key").textContent);
     let nodeSummaries = {};
     uploadCodeButton.disabled = true;
     generateButton.disabled = true;
@@ -1180,8 +1181,8 @@
         summaryResult
       );
       generateSummaryButton.addEventListener("click", async () => {
-        if (!openRouterKey && !defaultApiConfigured) {
-          summaryResult.textContent = "Sign in to OpenRouter or configure the server API.";
+        if (!openRouterKey && !defaultApiKey) {
+          summaryResult.textContent = "Sign in to OpenRouter first.";
           return;
         }
         const summaryModelIdForRequest = getEffectiveModelId();
@@ -1225,8 +1226,7 @@
             node_id: node.id,
             files,
             model: summaryModelIdForRequest,
-            api_key: openRouterKey,
-            api_url: openRouterEndpoint(),
+            api_key: openRouterKey || defaultApiKey,
             context_length: summaryModel.context_length,
             referer: window.location.origin
           });
@@ -1670,7 +1670,7 @@
         generateButton.textContent = "Select a model";
         return;
       }
-      if (!openRouterKey && !defaultApiConfigured) {
+      if (!openRouterKey && !defaultApiKey) {
         generateButton.textContent = "Sign in to OpenRouter";
         return;
       }
@@ -1690,8 +1690,7 @@
         const request = JSON.stringify({
           files: projectFiles,
           model: selectedModelId,
-          api_key: openRouterKey,
-          api_url: openRouterEndpoint(),
+          api_key: openRouterKey || defaultApiKey,
           context_length: selectedModel.context_length,
           parallel: !sequentialGeneration.checked,
           referer: window.location.origin
@@ -1861,33 +1860,13 @@
       authButton.textContent = status === "user" ? "Log out" : "Auth via OpenRouter";
       authButton.dataset.action = status === "user" ? "logout" : "login";
     };
-    const loadApiStatus = async () => {
-      try {
-        const response = await fetch("/api/auth-status", {cache: "no-store"});
-        if (!response.ok) {
-          throw new Error(`API status request failed with status ${response.status}`);
-        }
-        const {status} = await response.json();
-        if (status !== "default" && status !== "not found") {
-          throw new Error("API status response was invalid.");
-        }
-        defaultApiConfigured = status === "default";
-        if (!openRouterKey) setAuthStatus(status);
-      } catch (error) {
-        defaultApiConfigured = false;
-        if (!openRouterKey) apiStatus.textContent = "unavailable";
-        console.error("Could not load default API status:", error);
-      }
-    };
-    const openRouterEndpoint = () => !openRouterKey && defaultApiConfigured
-      ? `${window.location.origin}/api/openrouter/chat/completions`
-      : "";
+    const effectiveApiKey = () => openRouterKey || defaultApiKey;
     const openRouterHeaders = () => {
       const headers = {
         "HTTP-Referer": `${window.location.origin}${window.location.pathname}`,
         "X-OpenRouter-Title": "CodeMap"
       };
-      if (openRouterKey) headers.Authorization = "Bearer " + openRouterKey;
+      if (effectiveApiKey()) headers.Authorization = "Bearer " + effectiveApiKey();
       return headers;
     };
     const loadModels = async () => {
@@ -2006,11 +1985,10 @@
       }
       openRouterKey = "";
       sessionStorage.removeItem("openrouter-api-key");
-      setAuthStatus(defaultApiConfigured ? "default" : "not signed in");
+      setAuthStatus(defaultApiKey ? "default" : "not signed in");
       loadModels();
     });
-    setAuthStatus(openRouterKey ? "user" : "not signed in");
-    loadApiStatus();
+    setAuthStatus(openRouterKey ? "user" : defaultApiKey ? "default" : "not signed in");
     finishOpenRouterOAuth()
       .then(loadModels)
       .catch(error => {

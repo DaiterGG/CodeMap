@@ -23,6 +23,7 @@ pub mod graph_parser;
 const CHUNK_CONTEXT_PERCENT: usize = 80;
 const MAX_RETRIES: usize = 3;
 const MAX_PARALLEL_CHUNKS: usize = 3;
+const OPENROUTER_CHAT_COMPLETIONS_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 const NODEGRAPH_PROMPT: &str = include_str!("../../prompts/nodegraph.txt");
 const START_PROMPT: &str = include_str!("../../prompts/multiagent_start.txt");
 const SEQUENTIAL_PROMPT: &str = include_str!("../../prompts/multiagent_sequential.txt");
@@ -62,8 +63,6 @@ struct GenerationRequest {
     files: Vec<FileInput>,
     model: String,
     api_key: String,
-    #[serde(default)]
-    api_url: String,
     context_length: usize,
     parallel: bool,
     referer: String,
@@ -77,8 +76,6 @@ struct SummaryRequest {
     files: Vec<FileInput>,
     model: String,
     api_key: String,
-    #[serde(default)]
-    api_url: String,
     context_length: usize,
     referer: String,
 }
@@ -95,14 +92,6 @@ struct SummaryNode {
 struct SummaryEdge {
     from: String,
     to: String,
-}
-
-fn openrouter_endpoint(api_url: &str) -> &str {
-    if api_url.trim().is_empty() {
-        "https://openrouter.ai/api/v1/chat/completions"
-    } else {
-        api_url
-    }
 }
 
 #[derive(Debug)]
@@ -362,7 +351,7 @@ async fn generate_summary(
     request: SummaryRequest,
     progress: &Function,
 ) -> Result<SummaryResult, String> {
-    if request.api_key.trim().is_empty() && request.api_url.trim().is_empty() {
+    if request.api_key.trim().is_empty() {
         return Err("Sign in to OpenRouter before generating a summary.".to_owned());
     }
     if request.model.trim().is_empty() {
@@ -387,7 +376,7 @@ async fn generate_summary(
         })?;
 
     let mut builder = reqwest::Client::new()
-        .post(openrouter_endpoint(&request.api_url))
+        .post(OPENROUTER_CHAT_COMPLETIONS_URL)
         .header("Content-Type", "application/json")
         .header("HTTP-Referer", &request.referer)
         .header("X-OpenRouter-Title", "CodeMap");
@@ -527,7 +516,7 @@ async fn generate(
     request: GenerationRequest,
     progress: &Function,
 ) -> Result<GenerationResult, String> {
-    if request.api_key.trim().is_empty() && request.api_url.trim().is_empty() {
+    if request.api_key.trim().is_empty() {
         return Err("Sign in to OpenRouter before generating a graph.".to_owned());
     }
     if request.model.trim().is_empty() {
@@ -808,7 +797,7 @@ async fn complete_with_retries(
     for _attempt in 0..=MAX_RETRIES {
         let result = async {
             let mut builder = client
-                .post(openrouter_endpoint(&request.api_url))
+                .post(OPENROUTER_CHAT_COMPLETIONS_URL)
                 .header("Content-Type", "application/json")
                 .header("HTTP-Referer", &request.referer)
                 .header("X-OpenRouter-Title", "CodeMap");
@@ -1077,18 +1066,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn openrouter_endpoint_uses_proxy_when_configured() {
-        assert_eq!(
-            openrouter_endpoint(""),
-            "https://openrouter.ai/api/v1/chat/completions"
-        );
-        assert_eq!(
-            openrouter_endpoint("http://localhost:36800/api/openrouter/chat/completions"),
-            "http://localhost:36800/api/openrouter/chat/completions"
-        );
-    }
-
-    #[test]
     fn single_agent_prompt_is_not_duplicated_in_the_system_context() {
         let messages = single_messages("project files".to_owned());
 
@@ -1239,7 +1216,6 @@ Main["<name>Main</name><source>missing.rs:full</source>"]
             ],
             model: "test/model".to_owned(),
             api_key: "test-key".to_owned(),
-            api_url: String::new(),
             context_length,
             referer: "https://example.com".to_owned(),
         }
