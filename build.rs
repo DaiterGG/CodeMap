@@ -14,14 +14,14 @@ const EMPTY_GRAPH_JSON: &str = r#"{"direction":"TD","name":null,"description":nu
 
 fn main() {
     println!("cargo:rerun-if-changed=src/page_template.rs");
-    println!("cargo:rerun-if-changed=public/index.html");
-    println!("cargo:rerun-if-changed=public/vendor/elk.bundled.js");
-    println!("cargo:rerun-if-changed=public/vendor/elk.LICENSE");
-    println!("cargo:rerun-if-changed=public/vendor/elkjs-libavoid.bundled.js");
-    println!("cargo:rerun-if-changed=public/vendor/libavoid.wasm");
-    println!("cargo:rerun-if-changed=public/vendor/elkjs-libavoid.LICENSE");
-    println!("cargo:rerun-if-changed=public/vendor/libavoid-js.LICENSE");
-    println!("cargo:rerun-if-changed=public/vendor/highlight.min.js");
+    println!("cargo:rerun-if-changed=src/public/index.html");
+    println!("cargo:rerun-if-changed=src/public/vendor/elk.bundled.js");
+    println!("cargo:rerun-if-changed=src/public/vendor/elk.LICENSE");
+    println!("cargo:rerun-if-changed=src/public/vendor/elkjs-libavoid.bundled.js");
+    println!("cargo:rerun-if-changed=src/public/vendor/libavoid.wasm");
+    println!("cargo:rerun-if-changed=src/public/vendor/elkjs-libavoid.LICENSE");
+    println!("cargo:rerun-if-changed=src/public/vendor/libavoid-js.LICENSE");
+    println!("cargo:rerun-if-changed=src/public/vendor/highlight.min.js");
     println!("cargo:rerun-if-changed=prompts/nodegraph.txt");
     println!("cargo:rerun-if-changed=browser-core/Cargo.toml");
     println!("cargo:rerun-if-changed=browser-core/src/lib.rs");
@@ -92,7 +92,7 @@ fn main() {
     });
 
     publish_page(&out_dir)
-        .unwrap_or_else(|error| panic!("could not assemble the static page in ./publish: {error}"));
+        .unwrap_or_else(|error| panic!("could not assemble the static page in ./public: {error}"));
 }
 
 fn publish_page(out_dir: &std::path::Path) -> io::Result<()> {
@@ -108,11 +108,11 @@ fn publish_page(out_dir: &std::path::Path) -> io::Result<()> {
         include_str!("prompts/nodegraph.txt"),
         &api_key,
     );
-    let publish_dir =
+    let public_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"))
-            .join("publish");
-    fs::create_dir_all(&publish_dir)?;
-    fs::write(publish_dir.join("index.html"), html)
+            .join("public");
+    fs::create_dir_all(&public_dir)?;
+    fs::write(public_dir.join("index.html"), html)
 }
 
 fn configured_api_key() -> io::Result<String> {

@@ -1,0 +1,3464 @@
+<!doctype html>
+<html lang="en" data-pattern="crosses">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CodeMap</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font: 15px/1.5 Inter, sans-serif;
+      color: #fff;
+      background: #101010;
+      --page-bg: #101010;
+      --grid-line: rgba(255, 255, 255, 0.06);
+      --pattern-line: rgba(255, 255, 255, 0.16);
+      --node-bg: #1a1a1a;
+      --line-color: rgba(255, 255, 255, 0.7);
+      --connection-color: #b8b8b8;
+      --canvas-border: rgba(255, 255, 255, 0.25);
+      --text-color: #fff;
+      --muted-color: rgba(255, 255, 255, 0.65);
+      --button-bg: #101010;
+      --button-hover-bg: #1a1a1a;
+      --code-keyword: #ff7b72;
+      --code-string: #a5d6ff;
+      --code-number: #79c0ff;
+      --code-comment: #8b949e;
+      --code-title: #d2a8ff;
+      --code-literal: #79c0ff;
+      --code-attribute: #79c0ff;
+      --code-meta: #ffa657;
+      --code-addition: #aff5b4;
+      --code-deletion: #ffdcd7;
+    }
+
+    :root[data-theme="light"] {
+      color-scheme: light;
+      color: #202833;
+      background: #f4f6f8;
+      --page-bg: #f4f6f8;
+      --grid-line: rgba(32, 40, 51, 0.08);
+      --pattern-line: rgba(32, 40, 51, 0.18);
+      --node-bg: #fff;
+      --line-color: #57606a;
+      --connection-color: #626b75;
+      --canvas-border: #d0d7de;
+      --text-color: #202833;
+      --muted-color: #57606a;
+      --button-bg: #fff;
+      --button-hover-bg: #f4f6f8;
+      --code-keyword: #cf222e;
+      --code-string: #0a3069;
+      --code-number: #0550ae;
+      --code-comment: #6e7781;
+      --code-title: #8250df;
+      --code-literal: #0550ae;
+      --code-attribute: #0550ae;
+      --code-meta: #953800;
+      --code-addition: #116329;
+      --code-deletion: #82071e;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    main {
+      display: flex;
+      align-items: stretch;
+      gap: 24px;
+      height: 100vh;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .page-header {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 16px;
+      width: min(280px, 28vw);
+      min-width: 220px;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .resize-handle {
+      position: relative;
+      z-index: 1;
+      flex: 0 0 8px;
+      width: 8px;
+      margin-inline: -16px;
+      cursor: col-resize;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .resize-handle::after {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 3px;
+      width: 2px;
+      border-radius: 2px;
+      background: transparent;
+      content: "";
+    }
+
+    .resize-handle:hover::after,
+    .resize-handle:focus-visible::after {
+      background: var(--line-color);
+    }
+
+    .resize-handle:focus {
+      outline: none;
+    }
+
+    .node-panel {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      gap: 16px;
+    }
+
+    .node-panel-heading {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .node-panel-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .node-panel-title {
+      min-width: 0;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
+    .node-panel-description {
+      margin: 0;
+      color: var(--muted-color);
+      overflow-wrap: anywhere;
+    }
+
+    .node-panel-tabs {
+      display: flex;
+      flex: 0 0 auto;
+    }
+
+    .node-panel-tab {
+      flex: 1 1 50%;
+      padding: 8px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      color: var(--muted-color);
+      background: transparent;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .node-panel-tab[aria-selected="true"] {
+      border-bottom-color: var(--line-color);
+      color: var(--text-color);
+    }
+
+    .node-panel-content {
+      overflow: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+      color: var(--muted-color);
+    }
+
+    .node-panel-content:has(.node-chat-controls) {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .source-file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .source-file {
+      min-width: 0;
+      border-bottom: 1px solid var(--canvas-border);
+    }
+
+    .source-file summary {
+      overflow-wrap: anywhere;
+      padding: 8px 0;
+      color: var(--text-color);
+      cursor: pointer;
+    }
+
+    .source-file pre {
+      overflow: auto;
+      max-height: 50vh;
+      margin: 0;
+      padding: 0 0 10px 20px;
+      color: var(--text-color);
+      font: 12px/1.5 Consolas, "Courier New", monospace;
+      white-space: pre;
+      tab-size: 4;
+    }
+
+    .source-code-container {
+      display: flex;
+      max-height: 50vh;
+      overflow: auto;
+    }
+
+    .source-code-container pre {
+      flex: 0 0 auto;
+      max-height: none;
+      overflow: visible;
+      margin: 0;
+      padding-top: 0;
+      padding-bottom: 10px;
+      color: var(--text-color);
+    }
+
+    .source-code-container .source-line-numbers {
+      position: sticky;
+      left: 0;
+      padding-right: 12px;
+      border-right: 1px solid var(--canvas-border);
+      background: var(--node-bg);
+      color: var(--muted-color);
+      text-align: right;
+      user-select: none;
+    }
+
+    .source-code-container .source-code {
+      min-width: max-content;
+      padding-left: 12px;
+    }
+
+    .source-code code {
+      font: inherit;
+    }
+
+    .source-code .hljs {
+      color: var(--text-color);
+      background: transparent;
+    }
+
+    .source-code .hljs-comment,
+    .source-code .hljs-quote {
+      color: var(--code-comment);
+      font-style: italic;
+    }
+
+    .source-code .hljs-keyword,
+    .source-code .hljs-selector-tag,
+    .source-code .hljs-subst {
+      color: var(--code-keyword);
+    }
+
+    .source-code .hljs-string,
+    .source-code .hljs-doctag,
+    .source-code .hljs-regexp {
+      color: var(--code-string);
+    }
+
+    .source-code .hljs-number,
+    .source-code .hljs-literal,
+    .source-code .hljs-symbol,
+    .source-code .hljs-bullet {
+      color: var(--code-number);
+    }
+
+    .source-code .hljs-title,
+    .source-code .hljs-section,
+    .source-code .hljs-title.function_,
+    .source-code .hljs-title.class_ {
+      color: var(--code-title);
+    }
+
+    .source-code .hljs-attr,
+    .source-code .hljs-attribute,
+    .source-code .hljs-variable,
+    .source-code .hljs-template-variable,
+    .source-code .hljs-type,
+    .source-code .hljs-built_in {
+      color: var(--code-attribute);
+    }
+
+    .source-code .hljs-meta,
+    .source-code .hljs-name,
+    .source-code .hljs-params {
+      color: var(--code-meta);
+    }
+
+    .source-code .hljs-addition {
+      color: var(--code-addition);
+    }
+
+    .source-code .hljs-deletion {
+      color: var(--code-deletion);
+    }
+
+    .source-file-status {
+      padding: 0 10px 10px;
+      color: var(--muted-color);
+    }
+
+    .node-chat-controls {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-height: 0;
+      gap: 12px;
+    }
+
+    .node-chat-messages {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-height: 0;
+      gap: 10px;
+      overflow: auto;
+      box-sizing: border-box;
+      padding: 8px 12px 8px 0;
+      scrollbar-gutter: stable;
+    }
+
+    .node-chat-message {
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border: 1px solid var(--canvas-border);
+      border-radius: 12px;
+      color: var(--text-color);
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .node-chat-message-user {
+      align-self: flex-end;
+      background: var(--button-bg);
+    }
+
+    button.node-chat-message-user {
+      width: fit-content;
+      font: inherit;
+      font-size: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    button.node-chat-message-user:disabled {
+      cursor: wait;
+    }
+
+    .node-chat-message-edit-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .node-chat-message-edit-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .node-chat-message-edit-actions .control-button {
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .node-chat-message-edit-error {
+      color: var(--muted-color);
+      font-size: 12px;
+    }
+
+    .node-chat-message-assistant {
+      align-self: flex-start;
+    }
+
+    .node-chat-message-error {
+      align-self: flex-start;
+      color: var(--muted-color);
+    }
+
+    .node-chat-composer {
+      display: flex;
+      flex: 0 0 auto;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      background: var(--button-bg);
+    }
+
+    .node-chat-input {
+      appearance: none;
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 72px;
+      padding: 0;
+      border: 0;
+      outline: none;
+      box-shadow: none;
+      color: var(--text-color);
+      background: transparent;
+      font: inherit;
+      font-size: 14px;
+      resize: none;
+    }
+
+    .node-chat-input::-webkit-resizer {
+      display: none;
+    }
+
+    .node-chat-input:focus,
+    .node-chat-input:focus-visible {
+      border: 0;
+      outline: none;
+      box-shadow: none;
+    }
+
+    .node-chat-input::placeholder {
+      color: var(--muted-color);
+      opacity: 1;
+    }
+
+    .node-chat-toolbar,
+    .node-chat-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .node-chat-toolbar {
+      justify-content: space-between;
+    }
+
+    .node-chat-actions .model-controls {
+      width: auto;
+      gap: 0;
+    }
+
+    .node-chat-actions .model-picker {
+      width: auto;
+    }
+
+    .node-chat-actions #model-select {
+      width: auto;
+      max-width: min(220px, calc(100vw - 120px));
+    }
+
+    .node-chat-actions .node-chat-tool-button {
+      padding: 3px 6px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--muted-color);
+      background: transparent;
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .node-chat-actions .node-chat-tool-button:hover {
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+    }
+
+    .node-chat-actions .node-chat-tool-button:focus-visible {
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+      outline: none;
+    }
+
+    #send-chat-message-button {
+      display: grid;
+      flex: 0 0 30px;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      color: var(--muted-color);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #send-chat-message-button:hover,
+    #send-chat-message-button:focus-visible {
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+    }
+
+    #send-chat-message-button:focus-visible {
+      outline: 1px solid var(--canvas-border);
+      outline-offset: 2px;
+    }
+
+    #send-chat-message-button svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    #send-chat-message-button:disabled {
+      cursor: wait;
+      opacity: 0.5;
+    }
+
+    .page-identity {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-width: 0;
+      gap: 12px;
+    }
+
+    .graph-details {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .graph-details:has(h1:not(:empty), .graph-description:not(:empty)) {
+      display: flex;
+    }
+
+    .brand-name {
+      font-family: cursive;
+      font-size: 34px;
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .page-controls {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      width: 100%;
+      margin-top: auto;
+      gap: 8px;
+    }
+
+    .model-settings-row {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+    }
+
+    .model-settings-row .model-controls {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .generation-settings-button {
+      display: grid;
+      position: relative;
+      box-sizing: border-box;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      padding: 0;
+    }
+
+    .generation-settings-button svg {
+      display: block;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 18px;
+      height: 18px;
+      transform: translate(-50%, -50%);
+    }
+
+    .generation-actions-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .generation-actions-row #upload-code-button,
+    .generation-actions-row #generate-button {
+      box-sizing: border-box;
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #generate-button {
+      border-color: #fff;
+      color: #000;
+      background: #fff;
+    }
+
+    #generate-button:hover:not(:disabled):not([aria-disabled="true"]) {
+      background: #e6e6e6;
+    }
+
+    #generate-button[aria-disabled="true"] {
+      border-color: #888;
+      color: #888;
+      background: var(--page-bg);
+      cursor: pointer;
+    }
+
+    #generate-button:disabled {
+      cursor: not-allowed;
+    }
+
+    .model-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .model-picker {
+      position: relative;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    #model-select {
+      box-sizing: border-box;
+      overflow: hidden;
+      width: 100%;
+      min-width: 0;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #model-select:disabled {
+      text-align: center;
+    }
+
+    #model-select.web-mode-notice {
+      text-align: center;
+    }
+
+    .model-menu {
+      position: fixed;
+      z-index: 2;
+      top: 0;
+      left: 0;
+      width: min(420px, calc(100vw - 16px));
+      display: flex;
+      flex-direction: column-reverse;
+      box-sizing: border-box;
+      padding: 8px;
+      border: 1px solid var(--line-color);
+      border-radius: 12px;
+      background: var(--page-bg);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .model-menu[hidden] {
+      display: none;
+    }
+
+    .model-search {
+      box-sizing: border-box;
+      width: 100%;
+      margin-top: 6px;
+      flex: 0 0 auto;
+      cursor: text;
+    }
+
+    .model-options {
+      overflow-y: auto;
+      max-height: 480px;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    .model-group-label {
+      padding: 6px 10px 3px;
+      color: var(--muted-color);
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .model-option {
+      display: block;
+      width: 100%;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--text-color);
+      background: transparent;
+      font: inherit;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .model-option:hover,
+    .model-option[aria-selected="true"] {
+      background: var(--button-hover-bg);
+    }
+
+    h1 {
+      display: block;
+      overflow: hidden;
+      margin: 0;
+      font-size: 20px;
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    h1:empty,
+    .graph-description:empty {
+      display: none;
+    }
+
+    .control-button {
+      padding: 8px 12px;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      color: var(--text-color);
+      background: var(--button-bg);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .control-button:hover {
+      background: var(--button-hover-bg);
+    }
+
+    .control-button:focus-visible {
+      outline: 2px solid var(--line-color);
+      outline-offset: 3px;
+    }
+
+    .graph-description {
+      display: block;
+      margin: 0;
+      color: var(--muted-color);
+    }
+
+    .canvas {
+      box-sizing: border-box;
+      overflow: auto;
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      background-color: var(--page-bg);
+    }
+
+    :root[data-pattern="grid"] .canvas {
+      background-image:
+        linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+      background-size: 300px 200px;
+    }
+
+    :root[data-pattern="dots"] .canvas {
+      background-image: radial-gradient(var(--pattern-line) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    .canvas {
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .canvas.panning {
+      cursor: grabbing;
+      user-select: none;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .edge {
+      stroke: var(--connection-color);
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+    }
+
+    .edge.dotted {
+      stroke-dasharray: 5 5;
+    }
+
+    .edge-label {
+      fill: var(--muted-color);
+      font-size: 12px;
+    }
+
+    .node rect {
+      fill: var(--node-bg);
+      stroke: var(--line-color);
+      stroke-width: 2;
+    }
+
+    .node {
+      cursor: default;
+      touch-action: none;
+    }
+
+    .node-action {
+      cursor: default;
+      touch-action: none;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .node-action rect {
+      fill: transparent;
+      stroke: none;
+    }
+
+    .node:hover .node-action {
+      opacity: 1;
+    }
+
+    .node-action-divider {
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .node:hover .node-action-divider {
+      opacity: 1;
+    }
+
+    .node-action:focus {
+      outline: none;
+    }
+
+    .node-move:focus rect {
+      stroke: var(--line-color);
+    }
+
+    .node-move {
+      cursor: grab;
+    }
+
+    .node.dragging .node-move {
+      cursor: grabbing;
+    }
+
+    .node-action text {
+      fill: var(--text-color);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .node-title {
+      fill: var(--text-color);
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .node-description {
+      fill: var(--muted-color);
+      font-size: 12px;
+    }
+
+    .upload-dialog {
+      width: min(480px, calc(100vw - 40px));
+      box-sizing: border-box;
+      padding: 0;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      color: var(--text-color);
+      background: var(--page-bg);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .upload-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    .upload-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 20px;
+    }
+
+    .upload-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .upload-heading h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .upload-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .upload-field input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 8px 12px;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      color: var(--text-color);
+      background: var(--button-bg);
+      font: inherit;
+    }
+
+    .upload-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .upload-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .generation-mode-setting {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .api-status-row {
+      box-sizing: border-box;
+      width: 100%;
+      justify-content: space-between;
+      margin: 0;
+    }
+
+    .api-auth-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      width: 100%;
+      gap: 6px;
+    }
+
+    #openrouter-sign-in-button {
+      width: 100%;
+    }
+
+    .setting-help {
+      display: inline-grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      border: 1px solid var(--muted-color);
+      border-radius: 50%;
+      color: var(--muted-color);
+      font-size: 12px;
+      cursor: help;
+    }
+
+    .upload-option input {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      border: 2px solid #fff;
+      border-radius: 3px;
+      background: transparent;
+      display: grid;
+      flex: 0 0 16px;
+      place-content: center;
+      cursor: pointer;
+    }
+
+    .upload-option input::before {
+      width: 4px;
+      height: 8px;
+      border-right: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      content: "";
+      opacity: 0;
+      transform: translateY(-1px) rotate(45deg);
+    }
+
+    .upload-option input:checked::before {
+      opacity: 1;
+    }
+
+    .upload-option input:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 3px;
+    }
+
+    .upload-dropzone {
+      padding: 24px 16px;
+      border: 2px dashed var(--line-color);
+      border-radius: 12px;
+      color: var(--muted-color);
+      text-align: center;
+    }
+
+    .upload-dropzone.dragging {
+      border-style: solid;
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+    }
+
+    @media (max-width: 860px) {
+      main {
+        flex-direction: column;
+      }
+
+      .page-header {
+        box-sizing: border-box;
+        flex: 0 0 min(40vh, 360px);
+        width: 100%;
+        min-width: 0;
+        height: auto;
+      }
+
+      .resize-handle {
+        flex: 0 0 8px;
+        width: auto;
+        height: 8px;
+        margin: -16px 0;
+        cursor: row-resize;
+      }
+
+      .resize-handle::after {
+        top: 3px;
+        right: 0;
+        bottom: auto;
+        left: 0;
+        width: auto;
+        height: 2px;
+      }
+
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="page-header">
+      <div class="page-identity">
+        <div class="brand-name">CodeMap</div>
+        <div class="graph-details" id="graph-details">{{GRAPH_DETAILS}}</div>
+      </div>
+      <div class="page-controls">
+        <div class="model-settings-row">
+          <div class="model-controls">
+            <div class="model-picker" id="model-picker">
+              <button class="control-button" id="model-select" type="button" disabled
+                aria-haspopup="listbox" aria-expanded="false" aria-controls="model-options">Loading models...</button>
+              <div class="model-menu" id="model-menu" hidden>
+                <input class="control-button model-search" id="model-search" type="search"
+                  placeholder="Search models..." autocomplete="off" aria-label="Search models">
+                <div class="model-options" id="model-options" role="listbox" aria-label="Models"></div>
+              </div>
+            </div>
+          </div>
+          <button class="control-button generation-settings-button" id="generation-settings-button" type="button"
+            aria-label="Generation Settings" title="Generation Settings" aria-haspopup="dialog"
+            aria-controls="generation-settings-dialog">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.28 7.28 0 0 0-1.63-.94l-.36-2.54A.49.49 0 0 0 13.87 2h-3.74a.49.49 0 0 0-.49.42L9.28 4.96c-.59.23-1.13.54-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.73 8.48a.5.5 0 0 0 .12.64L4.88 10.7c-.04.3-.06.61-.06.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.61.22l2.39-.96c.5.4 1.04.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.74c.24 0 .45-.18.49-.42l.36-2.54c.59-.23 1.13-.54 1.63-.94l2.39.96c.23.09.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"></path>
+            </svg>
+          </button>
+        </div>
+        <button class="control-button" id="export-button" type="button" aria-haspopup="dialog"
+          aria-controls="export-dialog">Import / Export Graph</button>
+        <div class="generation-actions-row">
+          <button class="control-button" id="upload-code-button" type="button">Upload code</button>
+          <button class="control-button" id="generate-button" type="button">Generate</button>
+        </div>
+      </div>
+    </div>
+    <div class="resize-handle" id="sidebar-resize-handle" role="separator" aria-orientation="vertical"
+      aria-label="Resize sidebar" aria-valuemin="220" aria-valuenow="280" tabindex="0"></div>
+    <div class="canvas"><svg id="graph-svg" role="img" aria-label="Codebase graph"></svg></div>
+  </main>
+  <dialog class="upload-dialog" id="upload-dialog" aria-labelledby="upload-dialog-title">
+    <div class="upload-panel">
+      <div class="upload-heading">
+        <h2 id="upload-dialog-title">Upload code</h2>
+        <button class="control-button" id="upload-close-button" type="button" aria-label="Close upload window">Close</button>
+      </div>
+      <p class="upload-option">Only the latest uploaded project, graph, and generated node summaries are saved in this browser until cleared. Git ignore rules are applied locally. Generation sends selected source files to OpenRouter.</p>
+      <label class="upload-field" for="upload-files">
+        Select a local folder
+        <input id="upload-files" type="file" webkitdirectory directory multiple hidden>
+      </label>
+      <div class="upload-dropzone" id="upload-dropzone" tabindex="0">
+        Drop files or folders here
+      </div>
+      <button class="control-button" id="upload-browse-button" type="button">Choose folder</button>
+      <span id="upload-picker-status" aria-live="polite"></span>
+    </div>
+  </dialog>
+  <dialog class="upload-dialog" id="generation-settings-dialog" aria-labelledby="generation-settings-title">
+    <div class="upload-panel">
+      <div class="upload-heading">
+        <h2 id="generation-settings-title">Generation Settings</h2>
+        <button class="control-button" id="generation-settings-close-button" type="button"
+          aria-label="Close generation settings">Close</button>
+      </div>
+      <div class="generation-mode-setting">
+        <label class="upload-option" for="sequential-generation">
+          <input id="sequential-generation" type="checkbox">
+          Generate repository chunks sequentially
+        </label>
+        <span class="setting-help" tabindex="0"
+          title="Sequential mode waits for each repository chunk to finish before starting the next. When unchecked, chunks generate in parallel for faster results.">?</span>
+      </div>
+      <div class="api-auth-controls">
+        <p class="upload-option api-status-row">API: <span id="api-status" aria-live="polite">Checking...</span></p>
+        <button class="control-button" id="openrouter-sign-in-button" type="button">Auth via OpenRouter</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog class="upload-dialog" id="export-dialog" aria-labelledby="export-dialog-title">
+    <div class="upload-panel">
+      <div class="upload-heading">
+        <h2 id="export-dialog-title">Import / Export Graph</h2>
+        <button class="control-button" id="export-close-button" type="button"
+          aria-label="Close export window">Close</button>
+      </div>
+      <label class="upload-field" for="import-graph-file">
+        Import a graph file (.gr)
+        <input id="import-graph-file" type="file" accept=".gr,text/plain" hidden>
+      </label>
+      <button class="control-button" id="import-graph-button" type="button">Choose graph file</button>
+      <span id="import-graph-status" aria-live="polite"></span>
+      <button class="control-button" id="export-graph-gr" type="button" disabled>Download graph.gr</button>
+    </div>
+  </dialog>
+  <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
+  <script type="application/json" id="source-data">{{SOURCE_JSON}}</script>
+  <script type="application/json" id="system-prompt">{{SYSTEM_PROMPT_JSON}}</script>
+  <script type="application/json" id="default-api-key-a">{{DEFAULT_API_KEY_FIRST_JSON}}</script>
+  <script type="application/json" id="default-api-key-b">{{DEFAULT_API_KEY_SECOND_JSON}}</script>
+  <pre hidden id="codemap-core-wasm">{{CODEMAP_WASM}}</pre>
+  <pre hidden id="elk-license">{{ELK_LICENSE}}</pre>
+  <pre hidden id="elkjs-libavoid-license">{{LIBAVOID_LICENSE}}</pre>
+  <pre hidden id="libavoid-js-license">{{LIBAVOID_JS_LICENSE}}</pre>
+  <pre hidden id="libavoid-wasm">{{LIBAVOID_WASM}}</pre>
+  <script>{{ELK_JS}}</script>
+  <script>{{LIBAVOID_JS}}</script>
+  <script>{{HIGHLIGHT_JS}}</script>
+  <script>{{CODEMAP_BINDINGS_JS}}</script>
+  <script>
+    const pageHeader = document.querySelector(".page-header");
+    const defaultSidebarNodes = [...pageHeader.childNodes];
+    const graphDetails = document.getElementById("graph-details");
+    const modelSelect = document.getElementById("model-select");
+    const modelSearch = document.getElementById("model-search");
+    const modelPicker = document.getElementById("model-picker");
+    const modelMenu = document.getElementById("model-menu");
+    const modelOptions = document.getElementById("model-options");
+    const authButton = document.getElementById("openrouter-sign-in-button");
+    const generationSettingsButton = document.getElementById("generation-settings-button");
+    const generationSettingsButtonParent = generationSettingsButton.parentNode;
+    const generationSettingsButtonNextSibling = generationSettingsButton.nextSibling;
+    const generationSettingsDialog = document.getElementById("generation-settings-dialog");
+    const generationSettingsCloseButton = document.getElementById("generation-settings-close-button");
+    const sequentialGeneration = document.getElementById("sequential-generation");
+    const exportButton = document.getElementById("export-button");
+    const exportDialog = document.getElementById("export-dialog");
+    const exportCloseButton = document.getElementById("export-close-button");
+    const exportGraphGrButton = document.getElementById("export-graph-gr");
+    const importGraphFile = document.getElementById("import-graph-file");
+    const importGraphButton = document.getElementById("import-graph-button");
+    const importGraphStatus = document.getElementById("import-graph-status");
+    const modelControls = document.querySelector(".model-controls");
+    const modelControlsParent = modelControls.parentNode;
+    const modelControlsNextSibling = modelControls.nextSibling;
+    const uploadCodeButton = document.getElementById("upload-code-button");
+    const uploadDialog = document.getElementById("upload-dialog");
+    const uploadFiles = document.getElementById("upload-files");
+    const uploadDropzone = document.getElementById("upload-dropzone");
+    const uploadBrowseButton = document.getElementById("upload-browse-button");
+    const uploadCloseButton = document.getElementById("upload-close-button");
+    const uploadPickerStatus = document.getElementById("upload-picker-status");
+    const generateButton = document.getElementById("generate-button");
+    let projectFiles = [];
+    let embeddedSources = {};
+    let generatedGraphSource = "";
+    let workspaceReady = false;
+    let generationInProgress = false;
+    const defaultApiKey =
+      JSON.parse(document.getElementById("default-api-key-a").textContent) +
+      JSON.parse(document.getElementById("default-api-key-b").textContent);
+    const nodeChats = new Map();
+    uploadCodeButton.disabled = true;
+    generateButton.disabled = true;
+    const updateGenerateButtonState = () => {
+      generateButton.disabled = !workspaceReady || generationInProgress;
+      generateButton.setAttribute(
+        "aria-disabled",
+        String(projectFiles.length === 0 || generationInProgress || !workspaceReady)
+      );
+    };
+    updateGenerateButtonState();
+    let openRouterKey = sessionStorage.getItem("openrouter-api-key") || "";
+    const WORKSPACE_DB_NAME = "codemap-workspace";
+    const WORKSPACE_STORE_NAME = "state";
+    const SAVED_MODEL_KEY = "codemap-selected-model";
+    const MODEL_CATALOG_KEY = "model-catalog";
+    const MODEL_CATALOG_TTL_MS = 60 * 60 * 1000;
+    const SAVED_SIDEBAR_WIDTH_KEY = "codemap-sidebar-width";
+    const readSavedNumber = key => {
+      try {
+        const value = Number(localStorage.getItem(key));
+        return Number.isFinite(value) && value > 0 ? value : null;
+      } catch (error) {
+        console.warn("Could not read saved CodeMap settings:", error);
+        return null;
+      }
+    };
+    const readSavedModel = key => {
+      try {
+        return localStorage.getItem(key) || "";
+      } catch (error) {
+        console.warn("Could not read saved CodeMap settings:", error);
+        return "";
+      }
+    };
+    let savedSidebarWidth = readSavedNumber(SAVED_SIDEBAR_WIDTH_KEY);
+    let savedModelId = readSavedModel(SAVED_MODEL_KEY);
+    const saveSetting = (key, value) => {
+      try {
+        localStorage.setItem(key, String(value));
+      } catch (error) {
+        console.error("Could not save CodeMap setting:", error);
+      }
+    };
+    const openWorkspaceDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.open(WORKSPACE_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore(WORKSPACE_STORE_NAME, {keyPath: "id"});
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Could not open browser storage."));
+      request.onblocked = () => reject(new Error("Browser storage upgrade is blocked by another CodeMap tab."));
+    });
+    const workspaceDatabasePromise = openWorkspaceDatabase();
+    const getWorkspaceItem = async id => {
+      const database = await workspaceDatabasePromise;
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(WORKSPACE_STORE_NAME, "readonly");
+        const request = transaction.objectStore(WORKSPACE_STORE_NAME).get(id);
+        request.onsuccess = () => resolve(request.result?.value);
+        request.onerror = () => reject(request.error || new Error("Could not read saved browser data."));
+        transaction.onabort = () => reject(transaction.error || new Error("Could not read saved browser data."));
+      });
+    };
+    const setWorkspaceItem = async (id, value) => {
+      const database = await workspaceDatabasePromise;
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(WORKSPACE_STORE_NAME, "readwrite");
+        transaction.objectStore(WORKSPACE_STORE_NAME).put({id, value});
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error || new Error("Could not save browser data."));
+        transaction.onabort = () => reject(transaction.error || new Error("Could not save browser data."));
+      });
+    };
+    const saveCurrentGraph = () => setWorkspaceItem("generated-graph", {
+      graph,
+      source: generatedGraphSource
+    });
+    const generationFailureLabel = error =>
+      /429|rate.?limit/i.test(error) ? "Generation failed: ratelimited" : "Generation failed";
+    const apiStatus = document.getElementById("api-status");
+    const sourceLanguageByExtension = {
+      cjs: "javascript",
+      bash: "bash",
+      c: "c",
+      cc: "cpp",
+      clj: "clojure",
+      cljc: "clojure",
+      cljx: "clojure",
+      cmake: "cmake",
+      cpp: "cpp",
+      cs: "csharp",
+      cxx: "cpp",
+      css: "css",
+      dart: "dart",
+      dockerfile: "dockerfile",
+      ex: "elixir",
+      exs: "elixir",
+      gradle: "gradle",
+      go: "go",
+      h: "c",
+      htm: "xml",
+      html: "xml",
+      hpp: "cpp",
+      hxx: "cpp",
+      ini: "ini",
+      java: "java",
+      js: "javascript",
+      jsx: "javascript",
+      json: "json",
+      kt: "kotlin",
+      kts: "kotlin",
+      lua: "lua",
+      m: "objectivec",
+      md: "markdown",
+      mjs: "javascript",
+      mts: "typescript",
+      php: "php",
+      pl: "perl",
+      pm: "perl",
+      proto: "protobuf",
+      ps1: "powershell",
+      py: "python",
+      rb: "ruby",
+      rs: "rust",
+      scss: "scss",
+      scala: "scala",
+      sh: "bash",
+      sql: "sql",
+      swift: "swift",
+      toml: "toml",
+      ts: "typescript",
+      tsx: "typescript",
+      vue: "xml",
+      xml: "xml",
+      yaml: "yaml",
+      yml: "yaml"
+    };
+    const sourceLanguage = path => {
+      const filename = path.split(/[\\/]/).pop().toLowerCase();
+      const extension = filename.split(".").pop();
+      const language = sourceLanguageByExtension[extension];
+      return language && hljs.getLanguage(language) ? language : null;
+    };
+    const highlightSourceCode = (path, source) => {
+      const language = sourceLanguage(path);
+      return language
+        ? hljs.highlight(source, {language}).value
+        : hljs.highlightAuto(source).value;
+    };
+    const DEFAULT_MODEL_ID = "openrouter/free";
+    const recommendedModelIds = new Set([DEFAULT_MODEL_ID]);
+    let availableModels = [];
+    let selectedModelId = "";
+    const getEffectiveModelId = () => selectedModelId;
+    const restoreSidebarControls = () => {
+      closeModelMenu();
+      updateModelSelectLabel();
+      modelSelect.classList.remove("node-chat-tool-button");
+      generationSettingsButtonParent.insertBefore(
+        generationSettingsButton,
+        generationSettingsButtonNextSibling
+      );
+      modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
+      pageHeader.replaceChildren(...defaultSidebarNodes);
+    };
+    const showNodePanel = node => {
+      closeModelMenu();
+      const panel = document.createElement("section");
+      panel.className = "node-panel";
+      panel.setAttribute("aria-label", `${node.name || "Node"} details`);
+
+      const heading = document.createElement("div");
+      heading.className = "node-panel-heading";
+      const titleRow = document.createElement("div");
+      titleRow.className = "node-panel-title-row";
+      const title = document.createElement("h1");
+      title.className = "node-panel-title";
+      title.textContent = node.name || "";
+      const closeButton = document.createElement("button");
+      closeButton.className = "control-button";
+      closeButton.type = "button";
+      closeButton.textContent = "Close";
+      closeButton.setAttribute("aria-label", "Close node details");
+      closeButton.addEventListener("click", restoreSidebarControls);
+      titleRow.append(title, closeButton);
+
+      const description = document.createElement("p");
+      description.className = "node-panel-description";
+      description.textContent = node.description || "";
+      heading.append(titleRow, description);
+
+      const tabs = document.createElement("div");
+      tabs.className = "node-panel-tabs";
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "Node details");
+      const content = document.createElement("div");
+      content.className = "node-panel-content";
+      content.setAttribute("role", "tabpanel");
+      content.setAttribute("aria-live", "polite");
+      const chatControls = document.createElement("div");
+      chatControls.className = "node-chat-controls";
+      const chatMessages = document.createElement("div");
+      chatMessages.className = "node-chat-messages";
+      chatMessages.setAttribute("role", "log");
+      chatMessages.setAttribute("aria-live", "polite");
+      const chatComposer = document.createElement("div");
+      chatComposer.className = "node-chat-composer";
+      const chatInput = document.createElement("textarea");
+      chatInput.className = "node-chat-input";
+      chatInput.rows = 3;
+      chatInput.placeholder = "Ask about this node...";
+      chatInput.setAttribute("aria-label", "Chat message");
+      const chatToolbar = document.createElement("div");
+      chatToolbar.className = "node-chat-toolbar";
+      const chatActions = document.createElement("div");
+      chatActions.className = "node-chat-actions";
+      modelSelect.classList.add("node-chat-tool-button");
+      const sendChatMessageButton = document.createElement("button");
+      sendChatMessageButton.id = "send-chat-message-button";
+      sendChatMessageButton.type = "button";
+      sendChatMessageButton.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>';
+      sendChatMessageButton.setAttribute("aria-label", "Send message");
+      sendChatMessageButton.title = "Send message";
+      chatActions.append(modelControls, generationSettingsButton);
+      chatToolbar.append(chatActions, sendChatMessageButton);
+      chatComposer.append(chatInput, chatToolbar);
+      chatControls.append(chatMessages, chatComposer);
+      const chat = nodeChats.get(node.id) || {messages: [], displayMessages: [], pending: false};
+      nodeChats.set(node.id, chat);
+      chat.input = chatInput;
+      chat.sendButton = sendChatMessageButton;
+      chatInput.disabled = chat.pending;
+      sendChatMessageButton.disabled = chat.pending;
+      const renderChatMessages = () => {
+        chatMessages.replaceChildren();
+        for (const [displayIndex, message] of chat.displayMessages.entries()) {
+          const bubble = document.createElement(message.role === "user" ? "button" : "div");
+          bubble.className = `node-chat-message node-chat-message-${message.role}`;
+          if (message.role === "user") {
+            bubble.type = "button";
+            bubble.disabled = chat.pending;
+            bubble.setAttribute("aria-label", `Edit message: ${message.content}`);
+            bubble.title = "Click to edit this message";
+            bubble.addEventListener("click", () => openUserMessageEditor(displayIndex));
+          }
+          bubble.textContent = message.content;
+          chatMessages.append(bubble);
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      };
+      renderChatMessages();
+      const addChatMessage = (role, content, requestIndex) => {
+        chat.displayMessages.push({role, content, requestIndex});
+        renderChatMessages();
+      };
+      const buildUserRequestContent = (userRequest, requestIndex) => requestIndex === 0
+        ? [
+            `Selected node:\n${JSON.stringify(node, null, 2)}`,
+            `Full graph:\n${JSON.stringify(graph, null, 2)}`,
+            "Focus only on the selected node; use the full graph as context.",
+            "The next part is the user's request:",
+            userRequest
+          ].join("\n\n")
+        : userRequest;
+      const setChatPending = pending => {
+        chat.pending = pending;
+        chat.input.disabled = pending;
+        chat.sendButton.disabled = pending;
+        for (const userMessage of chatMessages.querySelectorAll("button.node-chat-message-user")) {
+          userMessage.disabled = pending;
+        }
+        if (chat.editSubmitButton) chat.editSubmitButton.disabled = pending;
+        if (chat.editCancelButton) chat.editCancelButton.disabled = pending;
+      };
+      const getChatErrorMessage = error =>
+        typeof error?.message === "string"
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Could not send this message.";
+      const openUserMessageEditor = displayIndex => {
+        if (chat.pending) return;
+        const message = chat.displayMessages[displayIndex];
+        if (message?.role !== "user" || !Number.isInteger(message.requestIndex)) return;
+
+        const editor = document.createElement("div");
+        editor.className =
+          "node-chat-message node-chat-message-user node-chat-message-edit-form";
+        const editorInput = document.createElement("textarea");
+        editorInput.className = "node-chat-input";
+        editorInput.rows = 3;
+        editorInput.value = message.content;
+        editorInput.setAttribute("aria-label", "Edit message");
+        const editorError = document.createElement("div");
+        editorError.className = "node-chat-message-edit-error";
+        editorError.setAttribute("role", "status");
+        const actions = document.createElement("div");
+        actions.className = "node-chat-message-edit-actions";
+        const cancelButton = document.createElement("button");
+        cancelButton.className = "control-button";
+        cancelButton.type = "button";
+        cancelButton.textContent = "Cancel";
+        const submitButton = document.createElement("button");
+        submitButton.className = "control-button";
+        submitButton.type = "button";
+        submitButton.textContent = "Resend";
+        submitButton.setAttribute("aria-label", "Resend edited message");
+        actions.append(cancelButton, submitButton);
+        editor.append(editorInput, editorError, actions);
+
+        const userBubble = chatMessages.children[displayIndex];
+        userBubble.replaceWith(editor);
+        chat.editSubmitButton = submitButton;
+        chat.editCancelButton = cancelButton;
+        cancelButton.addEventListener("click", () => {
+          chat.editSubmitButton = null;
+          chat.editCancelButton = null;
+          renderChatMessages();
+        });
+        const resendEditedMessage = async () => {
+          const userRequest = editorInput.value.trim();
+          if (!userRequest || chat.pending) return;
+          if (!openRouterKey && !defaultApiKey) {
+            editorError.textContent = "Sign in to OpenRouter first.";
+            return;
+          }
+          const modelId = selectedModelId;
+          if (!modelId) {
+            editorError.textContent = "Select a model before sending a message.";
+            return;
+          }
+
+          const requestIndex = message.requestIndex;
+          const candidateMessages = chat.messages.slice(0, requestIndex);
+          candidateMessages.push({
+            role: "user",
+            content: buildUserRequestContent(userRequest, requestIndex)
+          });
+          setChatPending(true);
+          try {
+            const request = JSON.stringify({
+              messages: candidateMessages,
+              model: modelId,
+              api_key: openRouterKey || defaultApiKey,
+              referer: window.location.origin
+            });
+            const core = await browserCorePromise;
+            const answer = await core.complete_chat(request);
+            chat.messages = [
+              ...candidateMessages,
+              {role: "assistant", content: answer}
+            ];
+            chat.displayMessages = chat.displayMessages.slice(0, displayIndex);
+            chat.displayMessages.push({role: "user", content: userRequest, requestIndex});
+            chat.displayMessages.push({role: "assistant", content: answer});
+            chat.editSubmitButton = null;
+            chat.editCancelButton = null;
+            renderChatMessages();
+          } catch (error) {
+            editorError.textContent = getChatErrorMessage(error);
+            console.error("Edited chat request failed:", error);
+          } finally {
+            setChatPending(false);
+            if (editorInput.isConnected) editorInput.focus();
+          }
+        };
+        submitButton.addEventListener("click", resendEditedMessage);
+        editorInput.addEventListener("keydown", event => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            resendEditedMessage();
+          }
+        });
+        editorInput.focus();
+      };
+      const sendChatMessage = async () => {
+        const userRequest = chatInput.value.trim();
+        if (!userRequest || chat.pending) return;
+        if (!openRouterKey && !defaultApiKey) {
+          addChatMessage("error", "Sign in to OpenRouter first.");
+          return;
+        }
+        const modelId = selectedModelId;
+        if (!modelId) {
+          addChatMessage("error", "Select a model before sending a message.");
+          return;
+        }
+
+        const requestIndex = chat.messages.length;
+        const candidateMessages = [
+          ...chat.messages,
+          {
+            role: "user",
+            content: buildUserRequestContent(userRequest, requestIndex)
+          }
+        ];
+        addChatMessage("user", userRequest, requestIndex);
+        chatInput.value = "";
+        setChatPending(true);
+        try {
+          const request = JSON.stringify({
+            messages: candidateMessages,
+            model: modelId,
+            api_key: openRouterKey || defaultApiKey,
+            referer: window.location.origin
+          });
+          const core = await browserCorePromise;
+          const answer = await core.complete_chat(request);
+          chat.messages = [...candidateMessages, {role: "assistant", content: answer}];
+          addChatMessage("assistant", answer);
+        } catch (error) {
+          chat.displayMessages.pop();
+          chatInput.value = userRequest;
+          addChatMessage("error", getChatErrorMessage(error));
+          console.error("Chat request failed:", error);
+        } finally {
+          setChatPending(false);
+          if (chatInput.isConnected) chatInput.focus();
+        }
+      };
+      sendChatMessageButton.addEventListener("click", sendChatMessage);
+      chatInput.addEventListener("keydown", event => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendChatMessage();
+        }
+      });
+      const tabButtons = [];
+      const setActiveTab = activeTab => {
+        for (const button of tabButtons) {
+          const selected = button.dataset.tab === activeTab;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+        }
+        closeModelMenu();
+        updateModelSelectLabel();
+        if (activeTab === "chat") {
+          content.replaceChildren(chatControls);
+          renderChatMessages();
+          chatInput.focus();
+          return;
+        }
+
+        if (!node.sources?.length) {
+          content.textContent = "No source files are referenced for this node.";
+          return;
+        }
+
+        const sourceFileList = document.createElement("div");
+        sourceFileList.className = "source-file-list";
+        for (const reference of node.sources) {
+          const file = document.createElement("details");
+          file.className = "source-file";
+          const fileHeading = document.createElement("summary");
+          const rangeLabel = reference.start === null
+            ? "full"
+            : reference.start === reference.end
+              ? `Line ${reference.start}`
+              : `Line ${reference.start}: ${reference.end}`;
+          fileHeading.textContent = `${reference.path} - ${rangeLabel}`;
+          const sourceStatus = document.createElement("div");
+          sourceStatus.className = "source-file-status";
+          sourceStatus.setAttribute("role", "status");
+          file.append(fileHeading, sourceStatus);
+          file.addEventListener("toggle", async () => {
+            if (!file.open || file.dataset.loaded === "true" || file.dataset.loading === "true") {
+              return;
+            }
+            file.dataset.loading = "true";
+            sourceStatus.textContent = "Loading source...";
+            const query = new URLSearchParams({path: reference.path});
+            if (reference.start !== null && reference.end !== null) {
+              query.set("start", String(reference.start));
+              query.set("end", String(reference.end));
+            }
+            try {
+              let result;
+              const source = await getSourceFileContents(reference.path);
+              const sourceLines = source.split(/\r?\n/);
+              const start = reference.start ?? 1;
+              const end = reference.end ?? sourceLines.length;
+              if (reference.start !== null && end > sourceLines.length) {
+                throw new Error("Source line range is outside the file.");
+              }
+              result = {
+                lines: sourceLines.slice(start - 1, end).map((text, index) => ({
+                  number: start + index,
+                  text
+                }))
+              };
+              const lineNumbers = document.createElement("pre");
+              lineNumbers.className = "source-line-numbers";
+              lineNumbers.textContent = result.lines.map(line => line.number).join("\n");
+              const code = document.createElement("code");
+              code.className = "hljs";
+              code.innerHTML = highlightSourceCode(
+                reference.path,
+                result.lines.map(line => line.text).join("\n")
+              );
+              const pre = document.createElement("pre");
+              pre.className = "source-code";
+              pre.append(code);
+              const codeContainer = document.createElement("div");
+              codeContainer.className = "source-code-container";
+              codeContainer.append(lineNumbers, pre);
+              sourceStatus.replaceWith(codeContainer);
+              file.dataset.loaded = "true";
+            } catch (error) {
+              sourceStatus.textContent = error instanceof TypeError
+                ? "This graph's source file is not loaded in the browser."
+                : error.message || "Could not load this source file.";
+            } finally {
+              delete file.dataset.loading;
+            }
+          });
+          sourceFileList.append(file);
+          if (node.sources.length === 1) file.open = true;
+        }
+        content.replaceChildren(sourceFileList);
+      };
+      for (const tabName of ["code", "chat"]) {
+        const button = document.createElement("button");
+        button.className = "node-panel-tab";
+        button.type = "button";
+        button.setAttribute("role", "tab");
+        button.dataset.tab = tabName;
+        button.textContent = tabName === "chat" ? "Chat" : "Code";
+        button.addEventListener("click", () => setActiveTab(tabName));
+        tabs.append(button);
+        tabButtons.push(button);
+      }
+      setActiveTab("code");
+      panel.append(heading, tabs, content);
+      pageHeader.replaceChildren(panel);
+      closeButton.focus();
+    };
+    uploadCodeButton.addEventListener("click", () => uploadDialog.showModal());
+    generationSettingsButton.addEventListener("click", () => generationSettingsDialog.showModal());
+    generationSettingsCloseButton.addEventListener("click", () => generationSettingsDialog.close());
+    exportButton.addEventListener("click", () => exportDialog.showModal());
+    exportCloseButton.addEventListener("click", () => exportDialog.close());
+    for (const dialog of [uploadDialog, generationSettingsDialog, exportDialog]) {
+      dialog.addEventListener("click", event => {
+        if (event.target === dialog) dialog.close();
+      });
+    }
+    const updateGraphExportButton = () => {
+      exportGraphGrButton.disabled = !generatedGraphSource;
+    };
+    const downloadTextFile = (filename, contents, type) => {
+      const url = URL.createObjectURL(new Blob([contents], {type}));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    exportGraphGrButton.addEventListener("click", () =>
+      downloadTextFile("graph.gr", generatedGraphSource, "application/octet-stream"));
+    importGraphButton.addEventListener("click", () => importGraphFile.click());
+    importGraphFile.addEventListener("change", () => {
+      const file = importGraphFile.files[0];
+      if (!file) return;
+      importGraphFile.disabled = true;
+      importGraphButton.disabled = true;
+      importGraphStatus.textContent = "Reading graph file...";
+      file.text()
+        .then(async contents => {
+          if (file.name.split(".").at(-1).toLowerCase() !== "gr") {
+            throw new Error("Choose a .gr graph file.");
+          }
+          const nextSource = normalizeGraphSource(contents);
+          const core = await browserCorePromise;
+          const parsed = JSON.parse(core.parse_graph_source(nextSource));
+          const nextGraph = {
+            ...parsed,
+            direction: parsed.direction === "LeftRight" ? "LR" : "TD",
+            width: 320,
+            height: 200,
+            nodes: parsed.nodes.map(node => ({...node, width: 210, height: 131}))
+          };
+          const previousGraph = graph;
+          const previousSource = generatedGraphSource;
+          graph = nextGraph;
+          generatedGraphSource = nextSource;
+          try {
+            await renderGraph(graph);
+          } catch (error) {
+            graph = previousGraph;
+            generatedGraphSource = previousSource;
+            await renderGraph(graph);
+            throw error;
+          }
+          nodeChats.clear();
+          updateGraphExportButton();
+          try {
+            await saveCurrentGraph();
+          } catch (error) {
+            importGraphStatus.textContent =
+              `Imported ${file.name}, but could not save it in this browser: ${error.message}`;
+            return;
+          }
+          importGraphStatus.textContent = `Imported ${file.name}.`;
+        })
+        .catch(error => {
+          importGraphStatus.textContent = error.message || "Could not import graph file.";
+        })
+        .finally(() => {
+          importGraphFile.value = "";
+          importGraphFile.disabled = false;
+          importGraphButton.disabled = false;
+        });
+    });
+    const normalizeGraphSource = source => {
+      let normalized = source.trim();
+      if (normalized.startsWith("```")) {
+        const newline = normalized.indexOf("\n");
+        normalized = newline < 0 ? "" : normalized.slice(newline + 1);
+      }
+      return normalized.replace(/```\s*$/, "").trim();
+    };
+    const updateUploadButton = () => {
+      const label = projectFiles.length
+        ? `${projectFiles.length} files selected`
+        : "Upload code";
+      uploadCodeButton.textContent = label;
+      uploadCodeButton.title = label;
+      updateGenerateButtonState();
+    };
+    const isStoredFileList = value => Array.isArray(value) &&
+      value.every(file => typeof file?.path === "string" && typeof file?.contents === "string");
+    const getSourceFileContents = async path => {
+      if (!Object.hasOwn(embeddedSources, path)) {
+        const savedFiles = await getWorkspaceItem("project-files");
+        if (isStoredFileList(savedFiles)) {
+          projectFiles = savedFiles;
+          embeddedSources = Object.fromEntries(
+            projectFiles.map(({path, contents}) => [path, contents])
+          );
+          updateUploadButton();
+        }
+      }
+      if (!Object.hasOwn(embeddedSources, path)) {
+        throw new Error("This graph's source file is not loaded in the browser.");
+      }
+      return embeddedSources[path];
+    };
+    const isStoredGraph = value => value && typeof value === "object" &&
+      Array.isArray(value.nodes) && Array.isArray(value.edges);
+    const isStoredGeneratedGraph = value => value && typeof value === "object" &&
+      isStoredGraph(value.graph) && typeof value.source === "string";
+    const readProjectFiles = async fileList => {
+      const selected = Array.from(fileList)
+        .map(file => ({
+          file,
+          path: (file.webkitRelativePath || file.name).replaceAll("\\", "/")
+        }))
+        .filter(({path}) => !path.split("/").includes(".git"));
+      if (selected.length === 0) {
+        uploadPickerStatus.textContent = "No project files selected.";
+        return;
+      }
+      uploadPickerStatus.textContent = `Reading ${selected.length} files...`;
+      const loaded = [];
+      let skippedFiles = fileList.length - selected.length;
+      for (const {file, path} of selected) {
+        const bytes = await file.arrayBuffer();
+        try {
+          const contents = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
+          if (contents.includes("\0")) skippedFiles += 1;
+          else loaded.push({path, contents});
+        } catch {
+          skippedFiles += 1;
+        }
+      }
+      const ignoredPaths = await filterIgnoredInWasm(loaded);
+      projectFiles = loaded.filter(({path}) => !ignoredPaths.has(path));
+      embeddedSources = Object.fromEntries(projectFiles.map(({path, contents}) => [path, contents]));
+      updateUploadButton();
+      document.getElementById("upload-dialog-title").textContent = "Update code";
+      try {
+        await setWorkspaceItem("project-files", projectFiles);
+        uploadPickerStatus.textContent =
+          `${projectFiles.length} readable files saved in this browser; ${ignoredPaths.size} ignored and ${skippedFiles} binary or .git files skipped.`;
+        uploadDialog.close();
+      } catch (error) {
+        uploadPickerStatus.textContent =
+          `${projectFiles.length} files are loaded for this visit, but could not be saved for refresh: ${error.message}`;
+      }
+    };
+    uploadBrowseButton.addEventListener("click", () => uploadFiles.click());
+    uploadFiles.addEventListener("change", () => {
+      readProjectFiles(uploadFiles.files).catch(error => {
+        uploadPickerStatus.textContent = error.message || "Could not read the selected files.";
+      });
+    });
+    uploadCloseButton.addEventListener("click", () => uploadDialog.close());
+    uploadDropzone.addEventListener("dragover", event => {
+      event.preventDefault();
+      uploadDropzone.classList.add("dragging");
+    });
+    uploadDropzone.addEventListener("dragleave", () => {
+      uploadDropzone.classList.remove("dragging");
+    });
+    uploadDropzone.addEventListener("drop", event => {
+      event.preventDefault();
+      uploadDropzone.classList.remove("dragging");
+      readProjectFiles(event.dataTransfer.files).catch(error => {
+        uploadPickerStatus.textContent = error.message || "Could not read the dropped files.";
+      });
+    });
+    generateButton.addEventListener("click", async () => {
+      if (projectFiles.length === 0) {
+        uploadDialog.showModal();
+        return;
+      }
+      if (!selectedModelId) {
+        generateButton.textContent = "Select a model";
+        return;
+      }
+      if (!openRouterKey && !defaultApiKey) {
+        generateButton.textContent = "Sign in to OpenRouter";
+        return;
+      }
+      const selectedModel = availableModels.find(model => model.id === selectedModelId);
+      if (!Number.isSafeInteger(selectedModel?.context_length) || selectedModel.context_length <= 0) {
+        generateButton.textContent = "Model context unavailable";
+        return;
+      }
+      if (!window.confirm(
+        `Send ${projectFiles.length} selected source files to OpenRouter for graph generation?`
+      )) return;
+      generationInProgress = true;
+      updateGenerateButtonState();
+      generateButton.textContent = "Preparing...";
+      generatedGraphSource = "";
+      updateGraphExportButton();
+      try {
+        const request = JSON.stringify({
+          files: projectFiles,
+          model: selectedModelId,
+          api_key: openRouterKey || defaultApiKey,
+          context_length: selectedModel.context_length,
+          parallel: !sequentialGeneration.checked,
+          referer: window.location.origin
+        });
+        const core = await browserCorePromise;
+        const generated = JSON.parse(await core.generate_multiagent(request, status => {
+          generateButton.textContent = status;
+        }));
+        graph = {
+          ...generated.graph,
+          direction: generated.graph.direction === "LeftRight" ? "LR" : "TD",
+          width: 320,
+          height: 200,
+          nodes: generated.graph.nodes.map(node => ({...node, width: 210, height: 131})),
+          edges: generated.graph.edges
+        };
+        generatedGraphSource = normalizeGraphSource(generated.source);
+        nodeChats.clear();
+        await renderGraph(graph);
+        updateGraphExportButton();
+        try {
+          await saveCurrentGraph();
+        } catch (error) {
+          console.error("Generated graph and source could not be saved in this browser:", error);
+        }
+        generateButton.textContent = "Generated";
+        generateButton.title = "";
+      } catch (error) {
+        const message = error.message || "Could not generate graph.";
+        generateButton.textContent = generationFailureLabel(message);
+        generateButton.title = message;
+        console.error("Graph generation failed:", error);
+        updateGraphExportButton();
+      } finally {
+        generationInProgress = false;
+        updateGenerateButtonState();
+      }
+    });
+    const closeModelMenu = () => {
+      modelMenu.hidden = true;
+      modelSelect.setAttribute("aria-expanded", "false");
+    };
+    const positionModelMenu = () => {
+      if (modelMenu.hidden) return;
+
+      const bounds = modelSelect.getBoundingClientRect();
+      const viewportHeight = document.documentElement.clientHeight;
+      const edgeGap = 8;
+      const anchorGap = 6;
+      const aboveSpace = Math.max(0, bounds.top - anchorGap - edgeGap);
+      const belowSpace = Math.max(0, viewportHeight - bounds.bottom - anchorGap - edgeGap);
+      modelMenu.style.maxHeight = "";
+      const naturalHeight = modelMenu.getBoundingClientRect().height;
+      const placeAbove = aboveSpace >= naturalHeight || aboveSpace >= belowSpace;
+      const availableHeight = placeAbove ? aboveSpace : belowSpace;
+
+      modelMenu.style.maxHeight = `${availableHeight}px`;
+      const menuBounds = modelMenu.getBoundingClientRect();
+      const top = placeAbove
+        ? bounds.top - anchorGap - menuBounds.height
+        : bounds.bottom + anchorGap;
+      const left = Math.max(
+        edgeGap,
+        Math.min(bounds.left, document.documentElement.clientWidth - menuBounds.width - edgeGap)
+      );
+      modelMenu.style.top = `${Math.max(edgeGap, top)}px`;
+      modelMenu.style.left = `${left}px`;
+    };
+    const modelDisplayName = model => {
+      if (!Number.isSafeInteger(model.context_length) || model.context_length <= 0) {
+        return model.name;
+      }
+      const contextSize = new Intl.NumberFormat(undefined, {
+        notation: "compact",
+        maximumSignificantDigits: 2
+      }).format(model.context_length).toLowerCase();
+      return `${model.name} (${contextSize})`;
+    };
+    const updateModelSelectLabel = () => {
+      const selectedModel = availableModels.find(model => model.id === getEffectiveModelId());
+      if (selectedModel) modelSelect.textContent = modelDisplayName(selectedModel);
+      modelSelect.title = "";
+      modelSelect.removeAttribute("aria-label");
+    };
+    const renderModels = () => {
+      const query = modelSearch.value.trim().toLocaleLowerCase();
+      const filtered = availableModels.filter(model =>
+        `${model.name} ${model.id}`.toLocaleLowerCase().includes(query)
+      );
+      const groups = [
+        ["Recommended", filtered.filter(model => recommendedModelIds.has(model.id))],
+        ["Free", filtered.filter(model =>
+          model.is_free && !recommendedModelIds.has(model.id)
+        )],
+        ["Other", filtered.filter(model =>
+          !model.is_free && !recommendedModelIds.has(model.id)
+        )]
+      ].filter(([, models]) => models.length > 0);
+      if (groups.length === 0) {
+        modelOptions.replaceChildren();
+        const message = document.createElement("div");
+        message.className = "model-group-label";
+        message.textContent = availableModels.length === 0
+          ? "No models available"
+          : "No matching models";
+        modelOptions.append(message);
+        return;
+      }
+      modelOptions.replaceChildren();
+      for (const [label, models] of groups) {
+        const heading = document.createElement("div");
+        heading.className = "model-group-label";
+        heading.textContent = label;
+        modelOptions.append(heading);
+        for (const model of models) {
+          const option = document.createElement("button");
+          option.className = "model-option";
+          option.type = "button";
+          option.role = "option";
+          option.dataset.modelId = model.id;
+          option.setAttribute("aria-selected", String(model.id === getEffectiveModelId()));
+          option.textContent = modelDisplayName(model);
+          option.addEventListener("click", () => {
+            selectedModelId = model.id;
+            savedModelId = selectedModelId;
+            saveSetting(SAVED_MODEL_KEY, selectedModelId);
+            updateModelSelectLabel();
+            closeModelMenu();
+          });
+          modelOptions.append(option);
+        }
+      }
+    };
+    modelSelect.addEventListener("click", () => {
+      if (modelSelect.disabled) return;
+      modelMenu.hidden = !modelMenu.hidden;
+      modelSelect.setAttribute("aria-expanded", String(!modelMenu.hidden));
+      if (!modelMenu.hidden) {
+        renderModels();
+        positionModelMenu();
+        modelSearch.focus();
+      }
+    });
+    modelSearch.addEventListener("input", () => {
+      renderModels();
+      positionModelMenu();
+    });
+    window.addEventListener("resize", positionModelMenu);
+    window.addEventListener("scroll", positionModelMenu, true);
+    modelMenu.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        closeModelMenu();
+        modelSelect.focus();
+      }
+    });
+    document.addEventListener("click", event => {
+      if (!modelPicker.contains(event.target)) closeModelMenu();
+    });
+    const setAuthStatus = status => {
+      apiStatus.textContent = status === "user"
+        ? "signed in"
+        : status === "default"
+          ? "default (free models)"
+          : status;
+      authButton.textContent = status === "user" ? "Log out" : "Auth via OpenRouter";
+      authButton.dataset.action = status === "user" ? "logout" : "login";
+    };
+    const effectiveApiKey = () => openRouterKey || defaultApiKey;
+    const openRouterHeaders = () => {
+      const headers = {
+        "HTTP-Referer": `${window.location.origin}${window.location.pathname}`,
+        "X-OpenRouter-Title": "CodeMap"
+      };
+      if (effectiveApiKey()) headers.Authorization = "Bearer " + effectiveApiKey();
+      return headers;
+    };
+    const applyAvailableModels = models => {
+      availableModels = models;
+      const preferred = availableModels.find(model => model.id === savedModelId) ||
+        availableModels.find(model => model.id === DEFAULT_MODEL_ID);
+      selectedModelId = preferred?.id || availableModels[0]?.id || "";
+      savedModelId = selectedModelId;
+      if (selectedModelId) saveSetting(SAVED_MODEL_KEY, selectedModelId);
+      updateModelSelectLabel();
+      if (!selectedModelId) modelSelect.textContent = "No models available";
+      modelSelect.disabled = availableModels.length === 0;
+      renderModels();
+    };
+    let modelFetchPromise = null;
+    const loadModels = async () => {
+      let cachedCatalog = null;
+      try {
+        cachedCatalog = await getWorkspaceItem(MODEL_CATALOG_KEY);
+      } catch (error) {
+        console.warn("Could not read the cached model catalog:", error);
+      }
+
+      const hasCachedCatalog = Number.isFinite(cachedCatalog?.fetchedAt) &&
+        Array.isArray(cachedCatalog.models) &&
+        cachedCatalog.models.every(model =>
+          typeof model?.id === "string" && typeof model.name === "string"
+        );
+      if (hasCachedCatalog) {
+        applyAvailableModels(cachedCatalog.models);
+        const cacheAge = Date.now() - cachedCatalog.fetchedAt;
+        if (cacheAge >= 0 && cacheAge < MODEL_CATALOG_TTL_MS) return;
+      }
+
+      if (modelFetchPromise) return modelFetchPromise;
+      if (availableModels.length === 0) {
+        modelSelect.disabled = true;
+        modelSelect.textContent = "Loading models...";
+      }
+      modelFetchPromise = (async () => {
+        try {
+          const response = await fetch(
+            "https://openrouter.ai/api/v1/models?input_modalities=text&output_modalities=text",
+            {headers: openRouterHeaders(), cache: "no-store"}
+          );
+          if (!response.ok) {
+            throw new Error(`Model request failed with status ${response.status}`);
+          }
+          const catalog = await response.json();
+          if (!Array.isArray(catalog.data)) {
+            throw new Error("Model response did not contain a model list");
+          }
+          const fetchedModels = catalog.data
+            .filter(model =>
+              model.architecture?.input_modalities?.includes("text") &&
+              model.architecture?.output_modalities?.includes("text") &&
+              !model.id.endsWith(":batch") &&
+              !model.id.endsWith(":completion")
+            )
+            .map(model => ({
+              ...model,
+              is_free: Number(model.pricing?.prompt) === 0 &&
+                Number(model.pricing?.completion) === 0
+            }));
+          const fetchedAt = Date.now();
+          applyAvailableModels(fetchedModels);
+          try {
+            await setWorkspaceItem(MODEL_CATALOG_KEY, {
+              fetchedAt,
+              models: fetchedModels.map(({id, name, context_length, is_free}) => ({
+                id,
+                name,
+                context_length,
+                is_free
+              }))
+            });
+          } catch (error) {
+            console.error("Could not save the fetched model catalog:", error);
+          }
+        } catch (error) {
+          if (availableModels.length === 0) {
+            modelSelect.textContent = "Could not load models";
+            modelSelect.disabled = true;
+          }
+          console.error("Could not load models:", error);
+        } finally {
+          modelFetchPromise = null;
+        }
+      })();
+      return modelFetchPromise;
+    };
+    const createOAuthToken = () => {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      return btoa(String.fromCharCode(...bytes))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+    };
+    const startOpenRouterOAuth = async () => {
+      const verifier = createOAuthToken();
+      const state = createOAuthToken();
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+      sessionStorage.setItem("openrouter-oauth-verifier", verifier);
+      sessionStorage.setItem("openrouter-oauth-state", state);
+      const url = new URL("https://openrouter.ai/auth");
+      url.searchParams.set("callback_url", `${window.location.origin}${window.location.pathname}`);
+      url.searchParams.set("code_challenge", challenge);
+      url.searchParams.set("code_challenge_method", "S256");
+      url.searchParams.set("state", state);
+      url.searchParams.set("key_label", "CodeMap");
+      window.location.assign(url);
+    };
+    const finishOpenRouterOAuth = async () => {
+      const parameters = new URLSearchParams(window.location.search);
+      const code = parameters.get("code");
+      if (parameters.has("error")) {
+        sessionStorage.removeItem("openrouter-oauth-verifier");
+        sessionStorage.removeItem("openrouter-oauth-state");
+        window.history.replaceState(null, "", window.location.pathname);
+        setAuthStatus("sign-in cancelled");
+        return;
+      }
+      if (!code) return;
+      const verifier = sessionStorage.getItem("openrouter-oauth-verifier");
+      const state = sessionStorage.getItem("openrouter-oauth-state");
+      if (!verifier || !state || parameters.get("state") !== state) {
+        window.history.replaceState(null, "", window.location.pathname);
+        throw new Error("OpenRouter authorization state is missing or invalid.");
+      }
+      window.history.replaceState(null, "", window.location.pathname);
+      const response = await fetch("https://openrouter.ai/api/v1/auth/keys", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          code,
+          code_verifier: verifier,
+          code_challenge_method: "S256"
+        })
+      });
+      if (!response.ok) throw new Error(`OpenRouter key exchange failed (${response.status}).`);
+      const result = await response.json();
+      if (typeof result.key !== "string" || !result.key.trim()) {
+        throw new Error("OpenRouter returned an invalid API key.");
+      }
+      openRouterKey = result.key;
+      sessionStorage.setItem("openrouter-api-key", openRouterKey);
+      sessionStorage.removeItem("openrouter-oauth-verifier");
+      sessionStorage.removeItem("openrouter-oauth-state");
+      setAuthStatus("user");
+    };
+    authButton.addEventListener("click", async () => {
+      if (authButton.dataset.action !== "logout") {
+        startOpenRouterOAuth().catch(error => {
+          console.error("Could not start OpenRouter sign-in:", error);
+        });
+        return;
+      }
+      openRouterKey = "";
+      sessionStorage.removeItem("openrouter-api-key");
+      setAuthStatus(defaultApiKey ? "default" : "not signed in");
+      loadModels();
+    });
+    setAuthStatus(openRouterKey ? "user" : defaultApiKey ? "default" : "not signed in");
+    finishOpenRouterOAuth()
+      .then(loadModels)
+      .catch(error => {
+        console.error("OpenRouter sign-in failed:", error);
+      });
+
+    const initialGraph = JSON.parse(document.getElementById("graph-data").textContent);
+    let graph = structuredClone(initialGraph);
+    embeddedSources = JSON.parse(document.getElementById("source-data").textContent);
+    const systemPrompt = JSON.parse(document.getElementById("system-prompt").textContent);
+    const browserCorePromise = (async () => {
+      const binary = Uint8Array.from(
+        atob(document.getElementById("codemap-core-wasm").textContent.trim()),
+        character => character.charCodeAt(0)
+      );
+      await wasm_bindgen({module_or_path: binary});
+      return wasm_bindgen;
+    })();
+    const callBrowserCore = async (exportName, requestValue) => {
+      const core = await browserCorePromise;
+      const result = JSON.parse(core[exportName](JSON.stringify(requestValue)));
+      if (result.error) throw new Error(result.error);
+      return result;
+    };
+    const filterIgnoredInWasm = async files => {
+      const result = await callBrowserCore("filter_ignored_files", {
+        files: files.map(({path}) => ({path})),
+        gitignores: files
+          .filter(({path}) => path.split("/").at(-1) === ".gitignore")
+          .map(({path, contents}) => ({path, contents}))
+      });
+      return new Set(result.ignored);
+    };
+    const validateInWasm = async (source, files) => {
+      const result = await callBrowserCore("validate_graph", {
+        source,
+        files: files.map(({path, contents}) => ({path, contents}))
+      });
+      return {
+        ...result.graph,
+        direction: result.graph.direction === "LeftRight" ? "LR" : "TD",
+        width: 320,
+        height: 200,
+        nodes: result.graph.nodes.map(node => ({...node, width: 210, height: 131})),
+        edges: result.graph.edges.map(edge => ({
+          ...edge,
+          arrow_start: edge.arrow_start,
+          arrow_end: edge.arrow_end
+        }))
+      };
+    };
+    const svg = document.getElementById("graph-svg");
+    const main = document.querySelector("main");
+    const canvas = document.querySelector(".canvas");
+    const resizeHandle = document.getElementById("sidebar-resize-handle");
+    const narrowLayout = window.matchMedia("(max-width: 860px)");
+    let resizePointerId = null;
+    let resizeStartCoordinate = 0;
+    let resizeStartSize = 0;
+    const updateResizeHandle = () => {
+      const vertical = narrowLayout.matches;
+      const mainStyles = getComputedStyle(main);
+      const beforePadding = Number.parseFloat(vertical ? mainStyles.paddingTop : mainStyles.paddingLeft);
+      const afterPadding = Number.parseFloat(vertical ? mainStyles.paddingBottom : mainStyles.paddingRight);
+      const available = (vertical ? main.clientHeight : main.clientWidth) -
+        beforePadding - afterPadding - 24;
+      const minimum = vertical ? 180 : 220;
+      const maximum = Math.max(minimum, available - minimum);
+      const current = pageHeader.getBoundingClientRect()[vertical ? "height" : "width"];
+      resizeHandle.setAttribute("aria-orientation", vertical ? "horizontal" : "vertical");
+      resizeHandle.setAttribute("aria-valuemin", String(minimum));
+      resizeHandle.setAttribute("aria-valuemax", String(Math.round(maximum)));
+      resizeHandle.setAttribute("aria-valuenow", String(Math.round(
+        Math.min(maximum, Math.max(minimum, current))
+      )));
+    };
+    const resizeSidebar = desired => {
+      const vertical = narrowLayout.matches;
+      const mainStyles = getComputedStyle(main);
+      const startPadding = Number.parseFloat(vertical ? mainStyles.paddingTop : mainStyles.paddingLeft);
+      const endPadding = Number.parseFloat(vertical ? mainStyles.paddingBottom : mainStyles.paddingRight);
+      const available = (vertical ? main.clientHeight : main.clientWidth) -
+        startPadding - endPadding - 24;
+      const minimum = vertical ? 180 : 220;
+      const maximum = Math.max(minimum, available - minimum);
+      const size = Math.min(maximum, Math.max(minimum, desired));
+      pageHeader.style.flexBasis = `${size}px`;
+      resizeHandle.setAttribute("aria-valuenow", String(Math.round(size)));
+    };
+    if (savedSidebarWidth !== null) resizeSidebar(savedSidebarWidth);
+    const persistSidebarWidth = () => {
+      const dimension = narrowLayout.matches ? "height" : "width";
+      savedSidebarWidth = pageHeader.getBoundingClientRect()[dimension];
+      saveSetting(SAVED_SIDEBAR_WIDTH_KEY, savedSidebarWidth);
+    };
+    resizeHandle.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      resizePointerId = event.pointerId;
+      resizeStartCoordinate = narrowLayout.matches ? event.clientY : event.clientX;
+      resizeStartSize = pageHeader.getBoundingClientRect()[
+        narrowLayout.matches ? "height" : "width"
+      ];
+      resizeHandle.setPointerCapture(event.pointerId);
+    });
+    resizeHandle.addEventListener("pointermove", event => {
+      if (event.pointerId !== resizePointerId) return;
+      const coordinate = narrowLayout.matches ? event.clientY : event.clientX;
+      resizeSidebar(resizeStartSize + coordinate - resizeStartCoordinate);
+    });
+    const finishSidebarResize = event => {
+      if (event.pointerId !== resizePointerId) return;
+      resizePointerId = null;
+      persistSidebarWidth();
+      if (resizeHandle.hasPointerCapture(event.pointerId)) {
+        resizeHandle.releasePointerCapture(event.pointerId);
+      }
+    };
+    resizeHandle.addEventListener("pointerup", finishSidebarResize);
+    resizeHandle.addEventListener("pointercancel", finishSidebarResize);
+    resizeHandle.addEventListener("lostpointercapture", finishSidebarResize);
+    resizeHandle.addEventListener("keydown", event => {
+      const vertical = narrowLayout.matches;
+      const decrement = vertical ? "ArrowUp" : "ArrowLeft";
+      const increment = vertical ? "ArrowDown" : "ArrowRight";
+      if (event.key !== decrement && event.key !== increment) return;
+      event.preventDefault();
+      const current = pageHeader.getBoundingClientRect()[vertical ? "height" : "width"];
+      const step = event.shiftKey ? 40 : 10;
+      resizeSidebar(current + (event.key === increment ? step : -step));
+      persistSidebarWidth();
+    });
+    window.addEventListener("resize", updateResizeHandle);
+    narrowLayout.addEventListener("change", updateResizeHandle);
+    updateResizeHandle();
+    let resizeGraphViewport = null;
+    let resetGraphView = null;
+    window.addEventListener("keydown", event => {
+      const target = event.target;
+      if (event.code !== "Space" || event.repeat ||
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.matches("input, textarea, select, button")) ||
+        target instanceof SVGElement && target.closest(".node-action")) {
+        return;
+      }
+      event.preventDefault();
+      resetGraphView?.();
+    });
+    const isCanvasScrollbarPointer = event => {
+      const bounds = canvas.getBoundingClientRect();
+      const borderRight = Number.parseFloat(getComputedStyle(canvas).borderRightWidth) || 0;
+      const borderBottom = Number.parseFloat(getComputedStyle(canvas).borderBottomWidth) || 0;
+      const onVerticalScrollbar = canvas.scrollHeight > canvas.clientHeight &&
+        canvas.offsetWidth > canvas.clientWidth &&
+        event.clientX >= bounds.left + canvas.clientLeft + canvas.clientWidth &&
+        event.clientX < bounds.right - borderRight;
+      const onHorizontalScrollbar = canvas.scrollWidth > canvas.clientWidth &&
+        canvas.offsetHeight > canvas.clientHeight &&
+        event.clientY >= bounds.top + canvas.clientTop + canvas.clientHeight &&
+        event.clientY < bounds.bottom - borderBottom;
+      return onVerticalScrollbar || onHorizontalScrollbar;
+    };
+    canvas.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || event.target.closest?.(".node") ||
+        isCanvasScrollbarPointer(event)) return;
+      event.preventDefault();
+      canvas.setPointerCapture(event.pointerId);
+      canvas.classList.add("panning");
+      canvas.dataset.panPointerId = String(event.pointerId);
+      canvas.dataset.panX = String(event.clientX);
+      canvas.dataset.panY = String(event.clientY);
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (canvas.dataset.panPointerId !== String(event.pointerId)) return;
+      const deltaX = event.clientX - Number(canvas.dataset.panX);
+      const deltaY = event.clientY - Number(canvas.dataset.panY);
+      canvas.scrollLeft -= deltaX;
+      canvas.scrollTop -= deltaY;
+      canvas.dataset.panX = String(event.clientX);
+      canvas.dataset.panY = String(event.clientY);
+    });
+    const finishCanvasPan = event => {
+      if (canvas.dataset.panPointerId !== String(event.pointerId)) return;
+      delete canvas.dataset.panPointerId;
+      delete canvas.dataset.panX;
+      delete canvas.dataset.panY;
+      canvas.classList.remove("panning");
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    };
+    canvas.addEventListener("pointerup", finishCanvasPan);
+    canvas.addEventListener("pointercancel", finishCanvasPan);
+    canvas.addEventListener("lostpointercapture", finishCanvasPan);
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const makeSvgElement = (tag, attributes = {}) => {
+      const element = document.createElementNS(svgNamespace, tag);
+      for (const [name, value] of Object.entries(attributes)) {
+        element.setAttribute(name, value);
+      }
+      return element;
+    };
+
+    const elk = new ELK();
+    const libavoidWasmUrl = `data:application/wasm;base64,${
+      document.getElementById("libavoid-wasm").textContent.trim()
+    }`;
+    const createRoutingWorker = () => {
+      const bundle = [...document.scripts]
+        .find(script => script.textContent.includes("var ElkjsLibavoid = "));
+      if (!bundle) throw new Error("Could not load the graph-routing WebAssembly bundle.");
+      const workerRuntime = `
+        let session;
+        self.onmessage = async ({data}) => {
+          try {
+            if (data.type === "init") {
+              await ElkjsLibavoid.init(data.wasmUrl);
+              session = await ElkjsLibavoid.createRoutingSession(data.graph, data.options);
+            } else if (data.type === "move") {
+              session.moveNode(data.nodeId, data.position);
+            }
+            self.postMessage({id: data.id, routes: [...session.processTransaction().entries()]});
+          } catch (error) {
+            self.postMessage({id: data.id, error: error.message || String(error)});
+          }
+        };
+      `;
+      const workerUrl = URL.createObjectURL(new Blob(
+        [bundle.textContent, workerRuntime],
+        {type: "text/javascript"}
+      ));
+      const worker = new Worker(workerUrl);
+      const requests = new Map();
+      let nextRequestId = 0;
+      let workerFailure = null;
+      const failRequests = error => {
+        for (const {reject} of requests.values()) reject(error);
+        requests.clear();
+      };
+      worker.addEventListener("message", ({data}) => {
+        const request = requests.get(data.id);
+        if (!request) return;
+        requests.delete(data.id);
+        if (data.error) request.reject(new Error(data.error));
+        else request.resolve(new Map(data.routes));
+      });
+      worker.addEventListener("error", event => {
+        workerFailure = new Error(event.message || "Graph-routing worker failed.");
+        failRequests(workerFailure);
+      });
+      return {
+        request(type, payload) {
+          if (workerFailure) return Promise.reject(workerFailure);
+          const id = nextRequestId++;
+          return new Promise((resolve, reject) => {
+            requests.set(id, {resolve, reject});
+            try {
+              worker.postMessage({id, type, ...payload});
+            } catch (error) {
+              requests.delete(id);
+              reject(error);
+            }
+          });
+        },
+        destroy() {
+          failRequests(new Error("Graph-routing worker was replaced."));
+          worker.terminate();
+          URL.revokeObjectURL(workerUrl);
+        }
+      };
+    };
+    let activeRoutingWorker = null;
+
+    const combineReverseDirectedEdges = edges => {
+      const combined = [];
+      const used = new Set();
+      const directionOf = edge => edge.arrow_end
+        ? [edge.from, edge.to]
+        : [edge.to, edge.from];
+      for (let index = 0; index < edges.length; index++) {
+        if (used.has(index)) continue;
+        const edge = {...edges[index]};
+        const isSingleDirection = edge.arrow_start !== edge.arrow_end;
+        if (isSingleDirection && edge.from !== edge.to) {
+          const [source, target] = directionOf(edge);
+          const reverseIndex = edges.findIndex((candidate, candidateIndex) => {
+            if (candidateIndex <= index || used.has(candidateIndex) ||
+              candidate.arrow_start === candidate.arrow_end ||
+              candidate.label !== edge.label || candidate.dotted !== edge.dotted ||
+              candidate.from === candidate.to) {
+              return false;
+            }
+            const [candidateSource, candidateTarget] = directionOf(candidate);
+            return candidateSource === target && candidateTarget === source;
+          });
+          if (reverseIndex !== -1) {
+            edge.arrow_start = true;
+            edge.arrow_end = true;
+            used.add(reverseIndex);
+          }
+        }
+        used.add(index);
+        combined.push(edge);
+      }
+      return combined;
+    };
+
+    const layoutGraphWithElk = async graph => {
+      if (graph.nodes.length === 0) return [];
+      const nodeIds = new Set(graph.nodes.map(node => node.id));
+      const elkEdges = graph.edges.map((edge, index) => {
+        if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+          throw new Error(`Graph edge references an unknown node: ${edge.from} -> ${edge.to}`);
+        }
+        const reversed = edge.arrow_start && !edge.arrow_end;
+        return {
+          id: `edge-${index}`,
+          sources: [reversed ? edge.to : edge.from],
+          targets: [reversed ? edge.from : edge.to]
+        };
+      });
+      const layout = await elk.layout({
+        id: "root",
+        layoutOptions: {
+          "elk.algorithm": "layered",
+          "elk.direction": graph.direction === "LR" ? "RIGHT" : "DOWN",
+          "elk.edgeRouting": "ORTHOGONAL",
+          "elk.spacing.nodeNode": "72",
+          "elk.layered.spacing.nodeNodeBetweenLayers": "80",
+          "elk.padding": "[top=48,left=48,bottom=48,right=48]"
+        },
+        children: graph.nodes.map(node => ({
+          id: node.id,
+          width: node.width,
+          height: node.height
+        })),
+        edges: elkEdges
+      });
+      const positions = new Map(layout.children.map(node => [node.id, node]));
+      for (const node of graph.nodes) {
+        const position = positions.get(node.id);
+        if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+          throw new Error(`ELK did not place graph node '${node.id}'`);
+        }
+        node.x = position.x;
+        node.y = position.y;
+      }
+      graph.width = layout.width;
+      graph.height = layout.height;
+    };
+
+    const renderGraph = async graph => {
+    graph = {...graph, edges: combineReverseDirectedEdges(graph.edges)};
+    const selfLoopRoute = node => {
+      const clearance = 24;
+      const centerX = node.x + node.width / 2;
+      const centerY = node.y + node.height / 2;
+      const outerX = node.x + node.width + clearance;
+      const outerY = node.y - clearance;
+      return [
+        {x: node.x + node.width, y: centerY},
+        {x: outerX, y: centerY},
+        {x: outerX, y: outerY},
+        {x: centerX, y: outerY},
+        {x: centerX, y: node.y}
+      ];
+    };
+    await layoutGraphWithElk(graph);
+    const routingEdges = graph.edges.flatMap((edge, index) =>
+      edge.from === edge.to
+        ? []
+        : [{id: `edge-${index}`, source: edge.from, target: edge.to}]
+    );
+    let nextRoutingWorker = null;
+    let latestRoutes = new Map();
+    if (routingEdges.length > 0) {
+      const routingWorker = createRoutingWorker();
+      try {
+        latestRoutes = await routingWorker.request("init", {
+          wasmUrl: libavoidWasmUrl,
+          graph: {
+            id: "root",
+            children: graph.nodes.map(node => ({
+              id: node.id,
+              x: node.x,
+              y: node.y,
+              width: node.width,
+              height: node.height
+            })),
+            edges: routingEdges
+          },
+          options: {
+            routingType: "orthogonal",
+            shapeBufferDistance: 8,
+            idealNudgingDistance: 12,
+            nudgeOrthogonalSegmentsConnectedToShapes: true,
+            nudgeOrthogonalTouchingColinearSegments: true,
+            performUnifyingNudgingPreprocessingStep: true,
+            nudgeSharedPathsWithCommonEndPoint: true
+          }
+        });
+        nextRoutingWorker = routingWorker;
+      } catch (error) {
+        routingWorker.destroy();
+        throw error;
+      }
+    }
+    activeRoutingWorker?.destroy();
+    activeRoutingWorker = nextRoutingWorker;
+    svg.replaceChildren();
+    graphDetails.replaceChildren();
+    if (graph.name) {
+      const title = document.createElement("h1");
+      title.textContent = graph.name;
+      graphDetails.append(title);
+    }
+    if (graph.description) {
+      const description = document.createElement("p");
+      description.className = "graph-description";
+      description.textContent = graph.description;
+      graphDetails.append(description);
+    }
+    const initialGraphWidth = graph.width;
+    const initialGraphHeight = graph.height;
+    const viewportPadding = 48;
+    let viewMinX = 0;
+    let viewMinY = 0;
+    let viewWidth = graph.width;
+    let viewHeight = graph.height;
+    let viewportInitialized = false;
+    let crossBackground = null;
+
+    const updateSvgViewport = () => {
+      const previousMinX = viewMinX;
+      const previousMinY = viewMinY;
+      const minX = Math.min(0, ...graph.nodes.map(node => node.x - viewportPadding)) -
+        canvas.clientWidth;
+      const minY = Math.min(0, ...graph.nodes.map(node => node.y - viewportPadding)) -
+        canvas.clientHeight;
+      const maxX = Math.max(
+        initialGraphWidth,
+        ...graph.nodes.map(node => node.x + node.width + viewportPadding)
+      ) + canvas.clientWidth;
+      const maxY = Math.max(
+        initialGraphHeight,
+        ...graph.nodes.map(node => node.y + node.height + viewportPadding)
+      ) + canvas.clientHeight;
+      viewMinX = minX;
+      viewMinY = minY;
+      viewWidth = maxX - minX;
+      viewHeight = maxY - minY;
+      svg.setAttribute("width", viewWidth);
+      svg.setAttribute("height", viewHeight);
+      svg.setAttribute("viewBox", `${viewMinX} ${viewMinY} ${viewWidth} ${viewHeight}`);
+      if (crossBackground) {
+        crossBackground.setAttribute("x", viewMinX);
+        crossBackground.setAttribute("y", viewMinY);
+        crossBackground.setAttribute("width", viewWidth);
+        crossBackground.setAttribute("height", viewHeight);
+      }
+      if (viewportInitialized) {
+        canvas.scrollLeft += previousMinX - viewMinX;
+        canvas.scrollTop += previousMinY - viewMinY;
+      } else {
+        viewportInitialized = true;
+        canvas.scrollTo(canvas.clientWidth, canvas.clientHeight);
+      }
+    };
+
+    if (resizeGraphViewport) {
+      window.removeEventListener("resize", resizeGraphViewport);
+    }
+    resizeGraphViewport = updateSvgViewport;
+    window.addEventListener("resize", resizeGraphViewport);
+    updateSvgViewport();
+
+    const definitions = makeSvgElement("defs");
+    if (document.documentElement.dataset.pattern === "crosses") {
+      const crossPattern = makeSvgElement("pattern", {
+        id: "cross-pattern",
+        width: "200",
+        height: "200",
+        patternUnits: "userSpaceOnUse"
+      });
+      crossPattern.append(makeSvgElement("path", {
+        d: "M100 96.5v7M96.5 100h7",
+        fill: "none",
+        stroke: "var(--pattern-line)",
+        "stroke-width": "1",
+        "stroke-linecap": "round"
+      }));
+      definitions.append(crossPattern);
+      svg.append(definitions);
+      crossBackground = makeSvgElement("rect", {
+        x: viewMinX,
+        y: viewMinY,
+        width: viewWidth,
+        height: viewHeight,
+        fill: "url(#cross-pattern)"
+      });
+      svg.append(crossBackground);
+    } else {
+      svg.append(definitions);
+    }
+    const arrow = makeSvgElement("marker", {
+      id: "arrow",
+      markerWidth: "8",
+      markerHeight: "6",
+      markerUnits: "userSpaceOnUse",
+      viewBox: "0 0 8 6",
+      refX: "7",
+      refY: "3",
+      orient: "auto-start-reverse"
+    });
+    arrow.append(makeSvgElement("path", {
+      d: "M1,1 L6,3 L1,5",
+      fill: "none",
+      stroke: "var(--connection-color)",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    }));
+    definitions.append(arrow);
+    const edgeLayer = makeSvgElement("g", {class: "edges"});
+    const edgeLabelLayer = makeSvgElement("g", {class: "edge-labels"});
+    const nodeLayer = makeSvgElement("g", {class: "nodes"});
+    svg.append(edgeLayer, edgeLabelLayer, nodeLayer);
+
+    const nodesById = new Map(graph.nodes.map(node => [node.id, node]));
+    const computeRoutes = () => graph.edges.map((edge, index) => {
+      const from = nodesById.get(edge.from);
+      const to = nodesById.get(edge.to);
+      if (!from || !to) {
+        throw new Error(`Graph edge references an unknown node: ${edge.from} -> ${edge.to}`);
+      }
+      if (edge.from === edge.to) return selfLoopRoute(from);
+      const route = latestRoutes.get(`edge-${index}`);
+      if (!route) {
+        throw new Error(`libavoid did not route graph edge: ${edge.from} -> ${edge.to}`);
+      }
+      return [route.sourcePoint, ...route.bendPoints, route.targetPoint];
+    });
+
+    const positionAtRouteFraction = (points, fraction) => {
+      const lengths = points.slice(1).map((point, index) =>
+        Math.hypot(point.x - points[index].x, point.y - points[index].y)
+      );
+      const targetLength = lengths.reduce((total, length) => total + length, 0) * fraction;
+      let traversed = 0;
+      for (let index = 0; index < lengths.length; index++) {
+        const length = lengths[index];
+        if (length > 0 && traversed + length >= targetLength) {
+          const start = points[index];
+          const end = points[index + 1];
+          const segmentFraction = (targetLength - traversed) / length;
+          return {
+            x: start.x + (end.x - start.x) * segmentFraction,
+            y: start.y + (end.y - start.y) * segmentFraction,
+            horizontal: start.y === end.y,
+            segmentIndex: index
+          };
+        }
+        traversed += length;
+      }
+      const lastIndex = points.length - 2;
+      const last = points[lastIndex + 1];
+      return {
+        x: last.x,
+        y: last.y,
+        horizontal: points[lastIndex].y === last.y,
+        segmentIndex: lastIndex
+      };
+    };
+
+    const labelBoundsAt = (position, metrics) => {
+      const baseline = position.horizontal
+        ? position.y - metrics.offsetY - metrics.height / 2
+        : position.y - 5;
+      return {
+        x: position.x + metrics.offsetX - 4,
+        y: baseline + metrics.offsetY - 2,
+        width: metrics.width + 8,
+        height: metrics.height + 4
+      };
+    };
+    const positionLabel = (labelText, position, metrics) => {
+      const baseline = position.horizontal
+        ? position.y - metrics.offsetY - metrics.height / 2
+        : position.y - 5;
+      labelText.setAttribute("x", position.x);
+      labelText.setAttribute("y", baseline);
+    };
+
+    const overlapArea = (first, second) => {
+      const width = Math.max(
+        0,
+        Math.min(first.x + first.width, second.x + second.width) - Math.max(first.x, second.x)
+      );
+      const height = Math.max(
+        0,
+        Math.min(first.y + first.height, second.y + second.height) - Math.max(first.y, second.y)
+      );
+      return width * height;
+    };
+
+    const roundedRoutePath = (points, radius = 12) => {
+      if (points.length < 3) {
+        return points.map((point, index) =>
+          `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`
+        ).join(" ");
+      }
+
+      let path = `M ${points[0].x} ${points[0].y}`;
+      for (let index = 1; index < points.length - 1; index++) {
+        const previous = points[index - 1];
+        const corner = points[index];
+        const next = points[index + 1];
+        const incomingLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+        const outgoingLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+        if (incomingLength === 0 || outgoingLength === 0) continue;
+
+        const trim = Math.min(radius, incomingLength / 2, outgoingLength / 2);
+        const before = {
+          x: corner.x + (previous.x - corner.x) * (trim / incomingLength),
+          y: corner.y + (previous.y - corner.y) * (trim / incomingLength)
+        };
+        const after = {
+          x: corner.x + (next.x - corner.x) * (trim / outgoingLength),
+          y: corner.y + (next.y - corner.y) * (trim / outgoingLength)
+        };
+        path += ` L ${before.x} ${before.y} Q ${corner.x} ${corner.y} ${after.x} ${after.y}`;
+      }
+
+      const last = points[points.length - 1];
+      return `${path} L ${last.x} ${last.y}`;
+    };
+
+    const isInsideNode = (point, node) =>
+      point.x >= node.x && point.x <= node.x + node.width &&
+      point.y >= node.y && point.y <= node.y + node.height;
+
+    const intersectNodeBoundary = (inside, outside, node) => {
+      const dx = outside.x - inside.x;
+      const dy = outside.y - inside.y;
+      const tx = dx > 0
+        ? (node.x + node.width - inside.x) / dx
+        : dx < 0
+          ? (node.x - inside.x) / dx
+          : Infinity;
+      const ty = dy > 0
+        ? (node.y + node.height - inside.y) / dy
+        : dy < 0
+          ? (node.y - inside.y) / dy
+          : Infinity;
+      const t = Math.min(tx, ty);
+      if (!Number.isFinite(t) || t < 0 || t > 1) {
+        throw new Error("Could not find where an edge route exits a node");
+      }
+      return {x: inside.x + dx * t, y: inside.y + dy * t};
+    };
+
+    const clipRouteAtNode = (points, node) => {
+      for (let index = 1; index < points.length; index++) {
+        if (!isInsideNode(points[index], node)) {
+          return [
+            intersectNodeBoundary(points[index - 1], points[index], node),
+            ...points.slice(index)
+          ];
+        }
+      }
+      return points;
+    };
+
+    const edgeElements = graph.edges.map(edge => {
+      const path = makeSvgElement("path", {
+        class: edge.dotted ? "edge dotted" : "edge"
+      });
+      if (edge.arrow_start) path.setAttribute("marker-start", "url(#arrow)");
+      if (edge.arrow_end) path.setAttribute("marker-end", "url(#arrow)");
+      edgeLayer.append(path);
+
+      let label = null;
+      let labelText = null;
+      let labelBackground = null;
+      if (edge.label) {
+        label = makeSvgElement("g", {
+          class: "edge-label",
+          "pointer-events": "none"
+        });
+        labelBackground = makeSvgElement("rect", {
+          fill: "var(--page-bg)",
+          stroke: "#fff",
+          "stroke-width": "1",
+          rx: "4",
+          ry: "4"
+        });
+        labelText = makeSvgElement("text", {
+          "text-anchor": "middle",
+          x: "0",
+          y: "0"
+        });
+        labelText.textContent = edge.label;
+        label.append(labelBackground, labelText);
+        edgeLabelLayer.append(label);
+      }
+      return {path, label, labelText, labelBackground};
+    });
+    const labelMetrics = new Map(edgeElements
+      .filter(({labelText}) => labelText)
+      .map(({labelText}) => {
+        const bounds = labelText.getBBox();
+        return [labelText, {
+          offsetX: bounds.x,
+          offsetY: bounds.y,
+          width: bounds.width,
+          height: bounds.height
+        }];
+      }));
+
+    let routingRequestInFlight = false;
+    let pendingRoutingMove = null;
+    let latestRoutingRevision = 0;
+    let hideEdgesTimer = null;
+    const ROUTE_HIDE_DELAY_MS = 100;
+    const setConnectionsVisible = visible => {
+      const visibility = visible ? "visible" : "hidden";
+      edgeLayer.style.visibility = visibility;
+      edgeLabelLayer.style.visibility = visibility;
+    };
+    const pumpRoutingQueue = () => {
+      if (routingRequestInFlight || !pendingRoutingMove || !activeRoutingWorker) return;
+      const move = pendingRoutingMove;
+      pendingRoutingMove = null;
+      routingRequestInFlight = true;
+      const worker = activeRoutingWorker;
+      if (hideEdgesTimer !== null) clearTimeout(hideEdgesTimer);
+      hideEdgesTimer = setTimeout(() => {
+        hideEdgesTimer = null;
+        if (worker === activeRoutingWorker &&
+          (routingRequestInFlight || pendingRoutingMove !== null)) {
+          setConnectionsVisible(false);
+        }
+      }, Math.max(0, move.requestedAt + ROUTE_HIDE_DELAY_MS - performance.now()));
+      worker.request("move", move).then(routes => {
+        if (worker !== activeRoutingWorker) return;
+        routingRequestInFlight = false;
+        if (move.revision === latestRoutingRevision && pendingRoutingMove === null) {
+          if (hideEdgesTimer !== null) {
+            clearTimeout(hideEdgesTimer);
+            hideEdgesTimer = null;
+          }
+          latestRoutes = routes;
+          updateEdgeRoutes();
+        } else {
+          pumpRoutingQueue();
+        }
+      }).catch(error => {
+        if (worker !== activeRoutingWorker) return;
+        routingRequestInFlight = false;
+        if (pendingRoutingMove !== null) {
+          pumpRoutingQueue();
+        } else {
+          if (hideEdgesTimer !== null) {
+            clearTimeout(hideEdgesTimer);
+            hideEdgesTimer = null;
+          }
+          setConnectionsVisible(true);
+        }
+        console.error("Graph edge routing failed:", error);
+      });
+    };
+    const queueRoutingMove = node => {
+      if (!activeRoutingWorker) {
+        updateEdgeRoutes();
+        return;
+      }
+      pendingRoutingMove = {
+        nodeId: node.id,
+        position: {x: node.x, y: node.y},
+        revision: ++latestRoutingRevision,
+        requestedAt: performance.now()
+      };
+      pumpRoutingQueue();
+    };
+    const updateEdgeRoutes = () => {
+      const routes = computeRoutes();
+      const occupiedBounds = graph.nodes.map(node => ({
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height
+      }));
+      routes.forEach((points, index) => {
+        const edge = graph.edges[index];
+        const from = nodesById.get(edge.from);
+        const to = nodesById.get(edge.to);
+        let visiblePoints;
+        if (edge.from === edge.to) {
+          visiblePoints = selfLoopRoute(from);
+        } else {
+          const clippedPoints = clipRouteAtNode(points, from);
+          visiblePoints = clipRouteAtNode(clippedPoints.slice().reverse(), to).reverse();
+        }
+        const {path, labelText, labelBackground} = edgeElements[index];
+        path.setAttribute("d", roundedRoutePath(visiblePoints));
+        if (labelText && labelBackground) {
+          const metrics = labelMetrics.get(labelText);
+          if (!metrics) throw new Error("Missing edge label measurements");
+          const labelFraction = edge.arrow_start !== edge.arrow_end ? 3 / 4 : 1 / 2;
+          let selectedPosition = positionAtRouteFraction(visiblePoints, labelFraction);
+          let selectedBounds = null;
+          let leastOverlap = Infinity;
+          const scorePosition = position => {
+            const bounds = labelBoundsAt(position, metrics);
+            const overlap = occupiedBounds.reduce(
+              (total, previous) => total + overlapArea(bounds, previous),
+              0
+            );
+            if (overlap < leastOverlap) {
+              selectedPosition = position;
+              selectedBounds = bounds;
+              leastOverlap = overlap;
+            }
+            return overlap;
+          };
+          let foundFreePosition = scorePosition(selectedPosition) === 0;
+          let intervals = [[0, labelFraction], [labelFraction, 1]];
+          for (let depth = 0; depth < 3 && !foundFreePosition; depth++) {
+            const nextIntervals = [];
+            for (const [start, end] of intervals) {
+              const fraction = (start + end) / 2;
+              const position = positionAtRouteFraction(visiblePoints, fraction);
+              if (scorePosition(position) === 0) {
+                selectedPosition = position;
+                selectedBounds = positionLabel(labelText, position);
+                foundFreePosition = true;
+                break;
+              }
+              nextIntervals.push([start, fraction], [fraction, end]);
+            }
+            intervals = nextIntervals;
+          }
+          if (selectedPosition && selectedBounds) {
+            positionLabel(labelText, selectedPosition, metrics);
+            labelBackground.setAttribute("x", selectedBounds.x);
+            labelBackground.setAttribute("y", selectedBounds.y);
+            labelBackground.setAttribute("width", selectedBounds.width);
+            labelBackground.setAttribute("height", selectedBounds.height);
+            occupiedBounds.push(selectedBounds);
+          }
+        }
+      });
+      setConnectionsVisible(true);
+      return true;
+    };
+    updateEdgeRoutes();
+
+    resetGraphView = () => {
+      canvas.scrollTo({
+        left: -viewMinX,
+        top: -viewMinY,
+        behavior: "smooth"
+      });
+    };
+
+    const wrapText = (text, maxChars, maxLines) => {
+      const lines = [];
+      let current = "";
+      let truncated = false;
+      for (const word of text.split(/\s+/).filter(Boolean)) {
+        if (current && current.length + 1 + word.length > maxChars) {
+          lines.push(current);
+          if (lines.length === maxLines) {
+            truncated = true;
+            break;
+          }
+          current = "";
+        }
+        current += `${current ? " " : ""}${word}`;
+      }
+      if (current && lines.length < maxLines) lines.push(current);
+      if (!lines.length) lines.push("");
+      if (truncated) lines[lines.length - 1] += "...";
+      return lines;
+    };
+
+    const nodeTitleRowHeight = 33;
+    const nodeDescriptionLineHeight = 12;
+    const nodeDescriptionLineCount = 6;
+    const nodeActionRowHeight = 26;
+    const nodeBaseHeight = nodeTitleRowHeight +
+      nodeDescriptionLineHeight * nodeDescriptionLineCount +
+      nodeActionRowHeight;
+
+    for (const node of graph.nodes) {
+      const group = makeSvgElement("g", {class: "node"});
+      group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+      const background = makeSvgElement("rect", {
+        x: 0,
+        y: 0,
+        width: node.width,
+        height: node.height,
+        rx: 12,
+        ry: 12
+      });
+      group.append(background);
+      const title = node.name || "";
+      const description = node.description || "";
+      const titleElement = makeSvgElement("text", {
+        class: "node-title",
+        x: node.width / 2,
+        y: 0,
+        "text-anchor": "middle"
+      });
+      const descriptionLayer = makeSvgElement("g");
+      const actionDivider = makeSvgElement("line", {
+        class: "node-action-divider",
+        stroke: "var(--line-color)",
+        "stroke-width": "2"
+      });
+      const buttonDivider = makeSvgElement("line", {
+        class: "node-action-divider",
+        stroke: "var(--line-color)",
+        "stroke-width": "2"
+      });
+      const makeNodeAction = (className, label, action) => {
+        const control = makeSvgElement("g", {
+          class: `node-action ${className}`,
+          role: "button",
+          tabindex: "0",
+          "aria-label": label
+        });
+        const rect = makeSvgElement("rect", {rx: "3", ry: "3"});
+        const text = makeSvgElement("text", {
+          "text-anchor": "middle"
+        });
+        text.textContent = className === "node-expand" ? "expand" : "move";
+        control.append(rect, text);
+        control.addEventListener("click", event => {
+          event.stopPropagation();
+          action();
+        });
+        control.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            action();
+          }
+        });
+        return {control, rect, text};
+      };
+      const expandAction = makeNodeAction(
+        "node-expand",
+        "Open node details",
+        () => showNodePanel(node)
+      );
+      const moveAction = makeNodeAction("node-move", "Move node by dragging", () => {});
+
+      const updateNodeLayout = () => {
+        const descriptionLines = description
+          ? wrapText(description, 24, nodeDescriptionLineCount)
+          : [];
+        node.height = nodeBaseHeight;
+        background.setAttribute("height", node.height);
+        titleElement.textContent = wrapText(title, 24, 1)[0];
+        const titleBounds = titleElement.getBBox();
+        titleElement.setAttribute(
+          "y",
+          nodeTitleRowHeight / 2 - (titleBounds.y + titleBounds.height / 2)
+        );
+        descriptionLayer.replaceChildren();
+        const descriptionAreaHeight = node.height - nodeTitleRowHeight - nodeActionRowHeight;
+        const descriptionTextHeight = descriptionLines.length * nodeDescriptionLineHeight;
+        const descriptionFirstLineY = nodeTitleRowHeight +
+          (descriptionAreaHeight - descriptionTextHeight) / 2 + 10;
+        descriptionLines.forEach((line, index) => {
+          const text = makeSvgElement("text", {
+            class: "node-description",
+            x: node.width / 2,
+            y: descriptionFirstLineY + index * nodeDescriptionLineHeight,
+            "text-anchor": "middle"
+          });
+          text.textContent = line;
+          descriptionLayer.append(text);
+        });
+
+        const actionTop = node.height - nodeActionRowHeight;
+        actionDivider.setAttribute("x1", "1");
+        actionDivider.setAttribute("x2", node.width - 1);
+        actionDivider.setAttribute("y1", actionTop);
+        actionDivider.setAttribute("y2", actionTop);
+        buttonDivider.setAttribute("x1", node.width / 2);
+        buttonDivider.setAttribute("x2", node.width / 2);
+        buttonDivider.setAttribute("y1", actionTop);
+        buttonDivider.setAttribute("y2", node.height - 1);
+        for (const [button, left, width] of [
+          [expandAction, 1, node.width / 2 - 1],
+          [moveAction, node.width / 2, node.width / 2 - 1]
+        ]) {
+          button.rect.setAttribute("x", left);
+          button.rect.setAttribute("y", actionTop + 1);
+          button.rect.setAttribute("width", width);
+          button.rect.setAttribute("height", nodeActionRowHeight - 2);
+          button.text.setAttribute("x", left + width / 2);
+          button.text.setAttribute("y", actionTop + 17);
+        }
+      };
+      group.append(
+        titleElement,
+        descriptionLayer,
+        actionDivider,
+        buttonDivider,
+        expandAction.control,
+        moveAction.control
+      );
+      nodeLayer.append(group);
+      updateNodeLayout();
+
+      let drag = null;
+      const applyDragPosition = () => {
+        if (!drag) return;
+        const deltaX = (drag.clientX - drag.lastX) * drag.scaleX;
+        const deltaY = (drag.clientY - drag.lastY) * drag.scaleY;
+        drag.lastX = drag.clientX;
+        drag.lastY = drag.clientY;
+        if (deltaX === 0 && deltaY === 0) return false;
+        node.x += deltaX;
+        node.y += deltaY;
+        group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+        return true;
+      };
+      moveAction.control.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const bounds = svg.getBoundingClientRect();
+        drag = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          lastX: event.clientX,
+          lastY: event.clientY,
+          scaleX: viewWidth / bounds.width,
+          scaleY: viewHeight / bounds.height
+        };
+        group.classList.add("dragging");
+        group.setPointerCapture(event.pointerId);
+      });
+
+      group.addEventListener("pointermove", event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        drag.clientX = event.clientX;
+        drag.clientY = event.clientY;
+        if (drag.frame === undefined) {
+          drag.frame = requestAnimationFrame(() => {
+            if (!drag) return;
+            drag.frame = undefined;
+            if (applyDragPosition()) {
+              updateSvgViewport();
+              queueRoutingMove(node);
+            }
+          });
+        }
+      });
+      moveAction.control.addEventListener("keydown", event => {
+        const movement = {
+          ArrowUp: [0, -10],
+          ArrowDown: [0, 10],
+          ArrowLeft: [-10, 0],
+          ArrowRight: [10, 0]
+        }[event.key];
+        if (!movement) return;
+        event.preventDefault();
+        node.x += movement[0];
+        node.y += movement[1];
+        group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+        updateSvgViewport();
+        queueRoutingMove(node);
+      });
+
+      const finishDragging = event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        drag.clientX = event.clientX;
+        drag.clientY = event.clientY;
+        if (drag.frame !== undefined) {
+          cancelAnimationFrame(drag.frame);
+          drag.frame = undefined;
+        }
+        applyDragPosition();
+        drag = null;
+        group.classList.remove("dragging");
+        if (group.hasPointerCapture(event.pointerId)) {
+          group.releasePointerCapture(event.pointerId);
+        }
+        updateSvgViewport();
+        queueRoutingMove(node);
+      };
+      group.addEventListener("pointerup", finishDragging);
+      group.addEventListener("pointercancel", finishDragging);
+      group.addEventListener("lostpointercapture", finishDragging);
+    }
+    };
+    const restoreWorkspace = async () => {
+      const restoreErrors = [];
+      try {
+        const savedFiles = await getWorkspaceItem("project-files");
+        if (isStoredFileList(savedFiles)) {
+          projectFiles = savedFiles;
+          embeddedSources = Object.fromEntries(
+            projectFiles.map(({path, contents}) => [path, contents])
+          );
+          updateUploadButton();
+          uploadPickerStatus.textContent = `${projectFiles.length} saved project files restored from this browser.`;
+        }
+      } catch (error) {
+        restoreErrors.push(`project files: ${error.message}`);
+      }
+      try {
+        const savedGraph = await getWorkspaceItem("generated-graph");
+        if (isStoredGeneratedGraph(savedGraph)) {
+          graph = savedGraph.graph;
+          generatedGraphSource = savedGraph.source;
+        } else if (isStoredGraph(savedGraph)) {
+          graph = savedGraph;
+          const legacyDebug = await getWorkspaceItem("generated-debug");
+          if (typeof legacyDebug?.graphSource === "string") {
+            generatedGraphSource = legacyDebug.graphSource;
+          }
+        }
+      } catch (error) {
+        restoreErrors.push(`generated graph: ${error.message}`);
+      }
+      try {
+        await renderGraph(graph);
+      } catch (error) {
+        restoreErrors.push(`graph layout: ${error.message}`);
+        console.error("Graph layout failed:", error);
+      }
+      updateGraphExportButton();
+      if (restoreErrors.length > 0) {
+        console.error(`Could not restore ${restoreErrors.join("; ")}`);
+      }
+      uploadCodeButton.disabled = false;
+      workspaceReady = true;
+      updateGenerateButtonState();
+    };
+    restoreWorkspace().catch(error => {
+      uploadCodeButton.disabled = false;
+      workspaceReady = true;
+      updateGenerateButtonState();
+      console.error("Workspace restore failed:", error);
+      renderGraph(graph).catch(layoutError => {
+        console.error("Graph layout failed:", layoutError);
+      });
+    });
+  </script>
+</body>
+
+</html>
