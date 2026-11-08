@@ -1,6 +1,5 @@
 /target
 /publish
-/public
 .env
 /docs/
 /examples
