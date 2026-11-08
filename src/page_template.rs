@@ -1,14 +1,14 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 
-const TEMPLATE: &str = include_str!("public/index.html");
-const ELK_JS: &str = include_str!("public/vendor/elk.bundled.js");
-const ELK_LICENSE: &str = include_str!("public/vendor/elk.LICENSE");
-const LIBAVOID_JS: &str = include_str!("public/vendor/elkjs-libavoid.bundled.js");
-const LIBAVOID_WASM: &[u8] = include_bytes!("public/vendor/libavoid.wasm");
-const LIBAVOID_LICENSE: &str = include_str!("public/vendor/elkjs-libavoid.LICENSE");
-const LIBAVOID_JS_LICENSE: &str = include_str!("public/vendor/libavoid-js.LICENSE");
-const HIGHLIGHT_JS: &str = include_str!("public/vendor/highlight.min.js");
+const TEMPLATE: &str = include_str!("../public/index.html");
+const ELK_JS: &str = include_str!("../public/vendor/elk.bundled.js");
+const ELK_LICENSE: &str = include_str!("../public/vendor/elk.LICENSE");
+const LIBAVOID_JS: &str = include_str!("../public/vendor/elkjs-libavoid.bundled.js");
+const LIBAVOID_WASM: &[u8] = include_bytes!("../public/vendor/libavoid.wasm");
+const LIBAVOID_LICENSE: &str = include_str!("../public/vendor/elkjs-libavoid.LICENSE");
+const LIBAVOID_JS_LICENSE: &str = include_str!("../public/vendor/libavoid-js.LICENSE");
+const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
 
 pub fn render_page_html(
     graph_details: &str,

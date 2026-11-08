@@ -485,6 +485,13 @@ Process -.->|optional| Output
             "top: 50%;\n      left: 50%;\n      width: 18px;\n      height: 18px;\n      transform: translate(-50%, -50%);"
         ));
         assert!(html.contains("generationSettingsButtonParent.insertBefore("));
+        assert!(html.contains(".node-chat-actions .generation-settings-button"));
+        assert!(html.contains("position: static;"));
+        assert!(html.contains("content: \"Settings\";"));
+        assert!(html.contains("generationSettingsButton.classList.add(\"node-chat-tool-button\")"));
+        assert!(
+            html.contains("generationSettingsButton.classList.remove(\"node-chat-tool-button\")")
+        );
         assert!(!html.contains("generationSettingsButton.textContent = \"Settings\""));
         let controls = html.split("<div class=\"page-controls\">").nth(1).unwrap();
         let export_position = controls.find("id=\"export-button\"").unwrap();
