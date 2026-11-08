@@ -20,7 +20,13 @@ pub fn render_page_html(
     default_api_key: &str,
 ) -> String {
     let system_prompt_json = json_script_value(system_prompt);
-    let default_api_key_json = json_script_value(default_api_key);
+    let split_at = default_api_key
+        .char_indices()
+        .nth(default_api_key.chars().count() / 2)
+        .map_or(default_api_key.len(), |(index, _)| index);
+    let (default_api_key_first, default_api_key_second) = default_api_key.split_at(split_at);
+    let default_api_key_first_json = json_script_value(default_api_key_first);
+    let default_api_key_second_json = json_script_value(default_api_key_second);
 
     TEMPLATE
         .replace("{{GRAPH_DETAILS}}", graph_details)
@@ -36,7 +42,14 @@ pub fn render_page_html(
         .replace("{{CODEMAP_BINDINGS_JS}}", codemap_bindings_js)
         .replace("{{CODEMAP_WASM}}", &STANDARD.encode(codemap_wasm))
         .replace("{{SYSTEM_PROMPT_JSON}}", &system_prompt_json)
-        .replace("{{DEFAULT_API_KEY_JSON}}", &default_api_key_json)
+        .replace(
+            "{{DEFAULT_API_KEY_FIRST_JSON}}",
+            &default_api_key_first_json,
+        )
+        .replace(
+            "{{DEFAULT_API_KEY_SECOND_JSON}}",
+            &default_api_key_second_json,
+        )
 }
 
 fn json_script_value(value: &str) -> String {

@@ -33,7 +33,6 @@ pub fn write_graph_page(graph: &Graph, graph_source: &str) -> io::Result<PathBuf
     let output_dir = create_timestamped_dir(&generated_dir)?;
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
-    fs::write(output_dir.join("graph.json"), &graph_json)?;
     crate::mermaid::write_graph_file(&output_dir, graph)?;
     crate::graph_file::write_graph_file(&output_dir, graph_source)?;
     Ok(output_path)
@@ -63,8 +62,6 @@ pub fn write_web_generation_files(graph: &Graph, graph_source: &str) -> io::Resu
 }
 
 fn write_graph_artifacts(output_dir: &Path, graph: &Graph, graph_source: &str) -> io::Result<()> {
-    let graph_json = serialize_graph_document(graph)?;
-    fs::write(output_dir.join("graph.json"), graph_json)?;
     crate::mermaid::write_graph_file(output_dir, graph)?;
     crate::graph_file::write_graph_file(output_dir, graph_source)?;
     Ok(())
@@ -107,7 +104,6 @@ pub fn finalize_response_history_page_with_sources(
     let html = render_page_html(&graph, &graph_json, &source_json);
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
-    fs::write(output_dir.join("graph.json"), &graph_json)?;
     crate::mermaid::write_graph_file(output_dir, &graph)?;
     crate::graph_file::write_graph_file(
         output_dir,
@@ -163,7 +159,6 @@ fn write_response_files(generated_dir: &Path, response: &str) -> io::Result<Path
     let output_dir = create_timestamped_dir(generated_dir)?;
     let output_path = output_dir.join("response.html");
     fs::write(&output_path, html)?;
-    fs::write(output_dir.join("graph.json"), &graph_json)?;
     crate::mermaid::write_graph_file(&output_dir, &graph)?;
     crate::graph_file::write_graph_file(&output_dir, raw_graph)?;
     Ok(output_path)
@@ -268,21 +263,6 @@ fn render_page_html(graph: &Graph, graph_json: &str, source_json: &str) -> Strin
         crate::prompts::nodegraph(),
         "",
     )
-}
-
-#[cfg(test)]
-fn render_web_index() -> String {
-    let graph = Graph {
-        direction: GraphDirection::TopDown,
-        name: None,
-        description: None,
-        nodes: Vec::new(),
-        edges: Vec::new(),
-        partials: Vec::new(),
-    };
-    let graph_json =
-        serialize_graph_document(&graph).expect("an empty graph can always be serialized");
-    render_page_html(&graph, &graph_json, "{}")
 }
 
 fn format_history(history: &[Step], validation_errors: &[Option<String>]) -> String {
@@ -395,18 +375,6 @@ fn escape_html(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::graph_parser::parse;
-    use base64::Engine;
-    use base64::engine::general_purpose::STANDARD;
-
-    const CODEMAP_WASM_MARKER: &str = "{{CODEMAP_WASM}}";
-    const SYSTEM_PROMPT_MARKER: &str = "{{SYSTEM_PROMPT_JSON}}";
-    const HIGHLIGHT_JS_MARKER: &str = "{{HIGHLIGHT_JS}}";
-    const ELK_JS_MARKER: &str = "{{ELK_JS}}";
-    const ELK_LICENSE_MARKER: &str = "{{ELK_LICENSE}}";
-    const LIBAVOID_JS_MARKER: &str = "{{LIBAVOID_JS}}";
-    const LIBAVOID_WASM_MARKER: &str = "{{LIBAVOID_WASM}}";
-    const LIBAVOID_LICENSE_MARKER: &str = "{{LIBAVOID_LICENSE}}";
-    const LIBAVOID_JS_LICENSE_MARKER: &str = "{{LIBAVOID_JS_LICENSE}}";
 
     const GRAPH: &str = r#"<graph type="LR" name="Test graph" desc="Shows an input, transformation, and output">
 Input["<name>Input</name><desc>Read source</desc>"]
@@ -426,7 +394,8 @@ Process -.->|optional| Output
     }
 
     #[test]
-    fn static_page_embeds_default_key_as_escaped_json() {
+    fn static_page_splits_default_key_into_escaped_json_parts() {
+        let default_key = "test-default-key";
         let html = crate::page_template::render_page_html(
             "",
             "{}",
@@ -434,142 +403,70 @@ Process -.->|optional| Output
             b"wasm",
             "bindings",
             "prompt",
-            "test-key</script>",
+            default_key,
         );
 
-        assert!(html.contains(r#""test-key\u003c/script>""#));
-        assert!(!html.contains("{{DEFAULT_API_KEY_JSON}}"));
+        assert!(html.contains(r#""test-def""#));
+        assert!(html.contains(r#""ault-key""#));
+        assert!(!html.contains(default_key));
+        assert!(html.contains("default-api-key-a"));
+        assert!(html.contains("default-api-key-b"));
+        assert!(!html.contains("{{DEFAULT_API_KEY_FIRST_JSON}}"));
+        assert!(!html.contains("{{DEFAULT_API_KEY_SECOND_JSON}}"));
     }
 
     #[test]
-    fn web_index_leaves_graph_metadata_empty_for_javascript() {
-        let html = render_web_index();
-        assert!(html.contains("<div class=\"graph-details\" id=\"graph-details\"></div>"));
-        assert!(!html.contains("<h1>CodeMap</h1>"));
-        assert!(!html.contains("{{GRAPH_DETAILS}}"));
-        assert!(!html.contains("data-server-mode"));
-        assert!(html.contains("id=\"upload-files\" type=\"file\" webkitdirectory"));
-        assert!(html.contains("id=\"codemap-core-wasm\""));
-        assert!(html.contains("generate_multiagent"));
-        assert!(html.contains("filter_ignored_files"));
-        assert!(html.contains("await wasm_bindgen({module_or_path: binary})"));
-        assert!(html.contains("return wasm_bindgen;"));
-        assert!(html.contains("createRoutingWorker"));
-        assert!(html.contains("new Worker(workerUrl)"));
-        assert!(html.contains("const getSourceFileContents = async path => {"));
-        assert!(html.contains("await getWorkspaceItem(\"project-files\")"));
-        assert!(
-            html.contains(
-                "Only the latest uploaded project, graph, and generated node summaries are saved in this browser"
-            )
+    fn static_page_splits_unicode_default_key_on_character_boundary() {
+        let html = crate::page_template::render_page_html(
+            "",
+            "{}",
+            "{}",
+            b"wasm",
+            "bindings",
+            "prompt",
+            "abc🔑def",
         );
-        assert!(html.contains("core.generate_node_summary(request, estimateJson =>"));
-        assert!(!html.contains("https://openrouter.ai/api/v1/chat/completions"));
-        assert!(html.contains("summaryContextEstimate.textContent"));
-        assert!(html.contains("node-summary-result"));
-        assert!(
-            html.contains("const SAVED_SUMMARY_MODEL_KEY = \"codemap-summary-selected-model\";")
+
+        assert!(html.contains(r#""abc""#));
+        assert!(html.contains(r#""🔑def""#));
+    }
+
+    #[test]
+    fn summary_controls_keep_compact_styles_and_selected_model_label() {
+        let html = crate::page_template::render_page_html(
+            "", "{}", "{}", b"wasm", "bindings", "prompt", "",
         );
-        assert!(html.contains("modelSelectionContext === \"summary\""));
-        assert!(html.contains("saveSetting(SAVED_SUMMARY_MODEL_KEY, summaryModelId)"));
-        assert!(html.contains("combineReverseDirectedEdges"));
-        assert!(
-            html.contains("graph = {...graph, edges: combineReverseDirectedEdges(graph.edges)}")
-        );
-        assert!(html.contains("queueRoutingMove(node)"));
-        assert!(html.contains("ROUTE_HIDE_DELAY_MS = 100"));
-        assert!(html.contains("setConnectionsVisible(false)"));
-        assert!(html.contains("setConnectionsVisible(true)"));
-        assert!(html.contains("edgeLayer.style.visibility = visibility"));
-        assert!(html.contains("edgeLabelLayer.style.visibility = visibility"));
-        assert!(html.contains("id=\"sequential-generation\""));
-        assert!(html.contains("Generate repository chunks sequentially"));
-        assert!(html.contains("parallel: !sequentialGeneration.checked"));
-        assert!(html.contains("class=\"setting-help\""));
-        assert!(html.contains("id=\"openrouter-sign-in-button\""));
-        assert!(html.contains("id=\"api-status\""));
-        assert!(html.contains("id=\"default-api-key\""));
-        assert!(html.contains("api_key: openRouterKey || defaultApiKey"));
-        assert!(!html.contains("/api/auth-status"));
-        assert!(!html.contains("/api/openrouter/chat/completions"));
-        assert!(html.contains("const DEFAULT_MODEL_ID = \"openrouter/free\";"));
-        assert!(html.contains("const recommendedModelIds = new Set([DEFAULT_MODEL_ID]);"));
-        assert!(html.contains("availableModels.find(model => model.id === DEFAULT_MODEL_ID)"));
+
+        assert!(html.contains(".node-summary-actions .node-summary-tool-button"));
+        assert!(html.contains("border: 0;"));
+        assert!(html.contains("summaryInput.value = \"Generate node summary\""));
+        assert!(html.contains("summaryInput.focus()"));
+        assert!(html.contains("const selectedModelLabel = selectedModel ? modelDisplayName(selectedModel) : \"Models\";"));
+        assert!(html.contains("generationSettingsButton.textContent = \"Settings\""));
+        assert!(html.contains(".api-auth-controls {\n      display: flex;\n      flex-direction: column;\n      align-items: stretch;\n      width: 100%;"));
+        assert!(html.contains("#openrouter-sign-in-button {\n      width: 100%;"));
+        assert!(html.contains(".api-status-row {\n      box-sizing: border-box;\n      width: 100%;\n      justify-content: space-between;"));
         assert!(html.contains(
-            "summaryControls.append(\n        modelControls,\n        generationSettingsButton,"
+            "generateSummaryButton.setAttribute(\"aria-label\", \"Generate node summary\")"
         ));
-        assert!(html.contains("generationSettingsButtonParent.insertBefore("));
-        assert!(html.contains("id=\"export-button\""));
-        assert!(html.contains("Import / Export"));
-        assert!(html.contains("id=\"export-dialog\""));
-        assert!(html.contains("id=\"import-graph-file\""));
-        assert!(html.contains("accept=\".gr,.json,application/json,text/plain\""));
-        assert!(html.contains("parse_graph_source"));
-        assert!(html.contains("prepareGraphForDisplay(imported)"));
+        assert!(!html.contains("Regenerate node summary"));
+        assert!(!html.contains("generateSummaryButton.textContent ="));
+    }
+
+    #[test]
+    fn graph_transfer_ui_supports_gr_files_only() {
+        let html = crate::page_template::render_page_html(
+            "", "{}", "{}", b"wasm", "bindings", "prompt", "",
+        );
+
+        assert!(html.contains("Import a graph file (.gr)"));
+        assert!(html.contains("accept=\".gr,text/plain\""));
         assert!(html.contains("Download graph.gr"));
-        assert!(html.contains(
-            "downloadTextFile(\"graph.gr\", generatedGraphSource, \"application/octet-stream\")"
-        ));
-        assert!(html.contains("Download graph.json"));
-        assert!(html.contains("isStoredGeneratedGraph(savedGraph)"));
-        assert!(html.contains("nodeSummaries: {...nodeSummaries}"));
-        assert!(
-            html.contains(
-                "nodeSummaries = getStoredNodeSummaries(savedGraph.nodeSummaries, graph)"
-            )
-        );
-        assert!(html.contains("nodeSummaries = {}"));
-        assert!(html.contains("if (graph !== graphForSummary)"));
-        assert!(html.contains("summaryResult.textContent = nodeSummaries[node.id] || \"\""));
-        assert!(html.contains("source: generatedGraphSource"));
-        assert!(html.contains("generatedGraphSource = savedGraph.source"));
-        assert!(html.contains("legacyDebug?.graphSource"));
-        assert!(!html.contains("export-prompt"));
-        assert!(!html.contains("export-response"));
-        assert!(html.contains("indexedDB.open(WORKSPACE_DB_NAME, 1)"));
-        assert!(html.contains("codemap-selected-model"));
-        assert!(html.contains("codemap-sidebar-width"));
-        assert!(!html.contains("Forget saved project"));
-        assert!(html.contains(&STANDARD.encode(CODEMAP_WASM)));
-        assert!(!html.contains(CODEMAP_WASM_MARKER));
-        assert!(!html.contains(SYSTEM_PROMPT_MARKER));
-        assert!(!html.contains("/api/poll"));
-        assert!(!html.contains("/api/generate"));
-    }
-
-    #[test]
-    fn embeds_local_syntax_highlighter_in_web_index() {
-        let html = render_web_index();
-        assert!(html.contains("hljs.highlightAuto"));
-        assert!(!html.contains(HIGHLIGHT_JS_MARKER));
-    }
-
-    #[test]
-    fn embeds_elk_and_defers_node_placement_to_the_browser() {
-        let html = render_web_index();
-        assert!(html.contains("org.eclipse.elk.layered"));
-        assert!(html.contains("elk.edgeRouting"));
-        assert!(html.contains("createRoutingSession"));
-        assert!(html.contains("routingType: \"orthogonal\""));
-        assert!(html.contains("shapeBufferDistance: 8"));
-        assert!(html.contains("idealNudgingDistance: 12"));
-        assert!(html.contains("nudgeOrthogonalSegmentsConnectedToShapes: true"));
-        assert!(html.contains("nudgeOrthogonalTouchingColinearSegments: true"));
-        assert!(html.contains("performUnifyingNudgingPreprocessingStep: true"));
-        assert!(html.contains("nudgeSharedPathsWithCommonEndPoint: true"));
-        assert!(!html.contains("crossingPenalty:"));
-        assert!(html.contains("requestAnimationFrame(() => {"));
-        assert!(html.contains("const labelBoundsAt = (position, metrics) => {"));
-        assert!(html.contains("depth < 3 && !foundFreePosition"));
-        assert!(html.contains("session.processTransaction()"));
-        assert!(html.contains("data:application/wasm;base64,"));
-        assert!(!html.contains(ELK_JS_MARKER));
-        assert!(!html.contains(ELK_LICENSE_MARKER));
-        assert!(!html.contains(LIBAVOID_JS_MARKER));
-        assert!(!html.contains(LIBAVOID_WASM_MARKER));
-        assert!(!html.contains(LIBAVOID_LICENSE_MARKER));
-        assert!(!html.contains(LIBAVOID_JS_LICENSE_MARKER));
-        assert!(html.contains("Eclipse Public License - v 2.0"));
+        assert!(!html.contains("export-graph-json"));
+        assert!(!html.contains("Download graph.json"));
+        assert!(!html.contains(".json graph file"));
+        assert!(!html.contains("graphJsonForExport"));
+        assert!(!html.contains("prepareGraphForDisplay"));
     }
 
     #[test]
@@ -631,7 +528,7 @@ Process -.->|optional| Output
         let graph = parse(GRAPH).unwrap();
         write_graph_artifacts(&output_dir, &graph, GRAPH).unwrap();
 
-        assert!(output_dir.join("graph.json").is_file());
+        assert!(!output_dir.join("graph.json").exists());
         assert!(output_dir.join("graph.mmd").is_file());
         assert!(output_dir.join("graph.gr").is_file());
         assert!(!output_dir.join("response.txt").exists());
@@ -643,18 +540,15 @@ Process -.->|optional| Output
     fn writes_standalone_graph_html_page() {
         let graph = parse(GRAPH).unwrap();
         let path = write_graph_page(&graph, GRAPH).unwrap();
-        let html = fs::read_to_string(&path).unwrap();
 
         assert_eq!(path.file_name().unwrap(), "response.html");
-        assert!(html.contains("<svg"));
-        assert!(html.contains("id=\"graph-data\""));
-        assert!(path.with_file_name("graph.json").exists());
+        assert!(!path.with_file_name("graph.json").exists());
         assert!(path.with_file_name("graph.mmd").exists());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn writes_positioned_json_for_final_response_history() {
+    fn embeds_positioned_graph_data_in_final_response_history_page() {
         use crate::step::{Message, StepId};
 
         let unique = SystemTime::now()
@@ -670,13 +564,14 @@ Process -.->|optional| Output
         }];
 
         let html_path = finalize_response_history_page(&output_dir, &history, &[]).unwrap();
-        let graph_json = fs::read_to_string(output_dir.join("graph.json")).unwrap();
+        let graph_json = serialize_graph_document(&parse(GRAPH).unwrap()).unwrap();
         let document: serde_json::Value = serde_json::from_str(&graph_json).unwrap();
         let html = fs::read_to_string(html_path).unwrap();
 
         assert_eq!(document["nodes"].as_array().unwrap().len(), 3);
         assert_eq!(document["edges"].as_array().unwrap().len(), 2);
         assert!(html.contains(&graph_json));
+        assert!(!output_dir.join("graph.json").exists());
         assert!(!output_dir.join("response.txt").exists());
         fs::remove_dir_all(output_dir).unwrap();
     }

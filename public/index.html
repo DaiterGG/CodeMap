@@ -157,7 +157,6 @@
     .node-panel-tabs {
       display: flex;
       flex: 0 0 auto;
-      border-bottom: 1px solid var(--line-color);
     }
 
     .node-panel-tab {
@@ -181,6 +180,11 @@
       flex: 1 1 auto;
       min-height: 0;
       color: var(--muted-color);
+    }
+
+    .node-panel-content:has(.node-summary-controls) {
+      display: flex;
+      flex-direction: column;
     }
 
     .source-file-list {
@@ -315,16 +319,135 @@
 
     .node-summary-controls {
       display: flex;
+      flex: 1 1 auto;
       flex-direction: column;
-      gap: 12px;
+      min-height: 0;
+      gap: 16px;
     }
 
-    .node-summary-controls .web-control {
+    .node-summary-composer {
+      display: flex;
+      flex: 0 0 auto;
       flex-direction: column;
+      gap: 8px;
+      margin-top: auto;
+      padding: 10px;
+      border: 2px solid var(--line-color);
+      border-radius: 12px;
+      background: var(--button-bg);
+    }
+
+    .node-summary-input {
+      appearance: none;
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 72px;
+      padding: 0;
+      border: 0;
+      outline: none;
+      box-shadow: none;
+      color: var(--text-color);
+      background: transparent;
+      font: inherit;
+      resize: none;
+    }
+
+    .node-summary-input::-webkit-resizer {
+      display: none;
+    }
+
+    .node-summary-input:focus,
+    .node-summary-input:focus-visible {
+      border: 0;
+      outline: none;
+      box-shadow: none;
+    }
+
+    .node-summary-input::placeholder {
+      color: var(--muted-color);
+      opacity: 1;
+    }
+
+    .node-summary-toolbar,
+    .node-summary-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .node-summary-toolbar {
+      justify-content: space-between;
+    }
+
+    .node-summary-actions .model-controls {
+      width: auto;
+      gap: 0;
+    }
+
+    .node-summary-actions .model-picker {
+      width: auto;
+    }
+
+    .node-summary-actions #model-select {
+      width: auto;
+      max-width: min(220px, calc(100vw - 120px));
+    }
+
+    .node-summary-actions .node-summary-tool-button {
+      padding: 3px 6px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--muted-color);
+      background: transparent;
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .node-summary-actions .node-summary-tool-button:hover {
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+    }
+
+    .node-summary-actions .node-summary-tool-button:focus-visible {
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+      outline: none;
     }
 
     #generate-summary-button {
-      width: 100%;
+      display: grid;
+      flex: 0 0 30px;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      color: var(--muted-color);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #generate-summary-button:hover,
+    #generate-summary-button:focus-visible {
+      color: var(--text-color);
+      background: var(--button-hover-bg);
+    }
+
+    #generate-summary-button:focus-visible {
+      outline: 1px solid var(--canvas-border);
+      outline-offset: 2px;
+    }
+
+    #generate-summary-button svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    #generate-summary-button:disabled {
+      cursor: wait;
+      opacity: 0.5;
     }
 
     .node-summary-result {
@@ -716,15 +839,22 @@
     }
 
     .api-status-row {
-      justify-content: flex-end;
+      box-sizing: border-box;
+      width: 100%;
+      justify-content: space-between;
       margin: 0;
     }
 
     .api-auth-controls {
       display: flex;
       flex-direction: column;
-      align-items: flex-end;
+      align-items: stretch;
+      width: 100%;
       gap: 6px;
+    }
+
+    #openrouter-sign-in-button {
+      width: 100%;
     }
 
     .setting-help {
@@ -831,8 +961,7 @@
         <div class="graph-details" id="graph-details">{{GRAPH_DETAILS}}</div>
       </div>
       <div class="page-controls">
-        <button class="control-button" id="export-button" type="button" aria-haspopup="dialog"
-          aria-controls="export-dialog">Import / Export</button>
+        <button class="control-button" id="upload-code-button" type="button">Upload code</button>
         <div class="web-control">
           <button class="control-button" id="generation-settings-button" type="button"
             aria-haspopup="dialog" aria-controls="generation-settings-dialog">Generation Settings</button>
@@ -848,7 +977,8 @@
             </div>
           </div>
         </div>
-        <button class="control-button" id="upload-code-button" type="button">Upload code</button>
+        <button class="control-button" id="export-button" type="button" aria-haspopup="dialog"
+          aria-controls="export-dialog">Import / Export Graph</button>
         <button class="control-button" id="generate-button" type="button">Generate</button>
       </div>
     </div>
@@ -898,24 +1028,24 @@
   <dialog class="upload-dialog" id="export-dialog" aria-labelledby="export-dialog-title">
     <div class="upload-panel">
       <div class="upload-heading">
-        <h2 id="export-dialog-title">Import / Export CodeMap files</h2>
+        <h2 id="export-dialog-title">Import / Export Graph</h2>
         <button class="control-button" id="export-close-button" type="button"
           aria-label="Close export window">Close</button>
       </div>
       <label class="upload-field" for="import-graph-file">
-        Import a graph file (.gr or .json)
-        <input id="import-graph-file" type="file" accept=".gr,.json,application/json,text/plain" hidden>
+        Import a graph file (.gr)
+        <input id="import-graph-file" type="file" accept=".gr,text/plain" hidden>
       </label>
       <button class="control-button" id="import-graph-button" type="button">Choose graph file</button>
       <span id="import-graph-status" aria-live="polite"></span>
       <button class="control-button" id="export-graph-gr" type="button" disabled>Download graph.gr</button>
-      <button class="control-button" id="export-graph-json" type="button" disabled>Download graph.json</button>
     </div>
   </dialog>
   <script type="application/json" id="graph-data">{{GRAPH_JSON}}</script>
   <script type="application/json" id="source-data">{{SOURCE_JSON}}</script>
   <script type="application/json" id="system-prompt">{{SYSTEM_PROMPT_JSON}}</script>
-  <script type="application/json" id="default-api-key">{{DEFAULT_API_KEY_JSON}}</script>
+  <script type="application/json" id="default-api-key-a">{{DEFAULT_API_KEY_FIRST_JSON}}</script>
+  <script type="application/json" id="default-api-key-b">{{DEFAULT_API_KEY_SECOND_JSON}}</script>
   <pre hidden id="codemap-core-wasm">{{CODEMAP_WASM}}</pre>
   <pre hidden id="elk-license">{{ELK_LICENSE}}</pre>
   <pre hidden id="elkjs-libavoid-license">{{LIBAVOID_LICENSE}}</pre>
@@ -945,7 +1075,6 @@
     const exportDialog = document.getElementById("export-dialog");
     const exportCloseButton = document.getElementById("export-close-button");
     const exportGraphGrButton = document.getElementById("export-graph-gr");
-    const exportGraphJsonButton = document.getElementById("export-graph-json");
     const importGraphFile = document.getElementById("import-graph-file");
     const importGraphButton = document.getElementById("import-graph-button");
     const importGraphStatus = document.getElementById("import-graph-status");
@@ -963,7 +1092,9 @@
     let projectFiles = [];
     let embeddedSources = {};
     let generatedGraphSource = "";
-    const defaultApiKey = JSON.parse(document.getElementById("default-api-key").textContent);
+    const defaultApiKey =
+      JSON.parse(document.getElementById("default-api-key-a").textContent) +
+      JSON.parse(document.getElementById("default-api-key-b").textContent);
     let nodeSummaries = {};
     uploadCodeButton.disabled = true;
     generateButton.disabled = true;
@@ -1119,6 +1250,9 @@
       closeModelMenu();
       modelSelectionContext = "main";
       updateModelSelectLabel();
+      modelSelect.classList.remove("node-summary-tool-button");
+      generationSettingsButton.classList.remove("node-summary-tool-button");
+      generationSettingsButton.textContent = "Generation Settings";
       modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
       generationSettingsButtonParent.insertBefore(
         generationSettingsButton,
@@ -1162,24 +1296,39 @@
       content.setAttribute("aria-live", "polite");
       const summaryControls = document.createElement("div");
       summaryControls.className = "node-summary-controls";
+      const summaryComposer = document.createElement("div");
+      summaryComposer.className = "node-summary-composer";
+      const summaryInput = document.createElement("textarea");
+      summaryInput.className = "node-summary-input";
+      summaryInput.rows = 3;
+      summaryInput.value = "Generate node summary";
+      summaryInput.setAttribute("aria-label", "Summary instructions");
+      const summaryToolbar = document.createElement("div");
+      summaryToolbar.className = "node-summary-toolbar";
+      const summaryActions = document.createElement("div");
+      summaryActions.className = "node-summary-actions";
+      modelSelect.classList.add("node-summary-tool-button");
+      generationSettingsButton.classList.add("node-summary-tool-button");
+      generationSettingsButton.textContent = "Settings";
       const generateSummaryButton = document.createElement("button");
-      generateSummaryButton.className = "control-button";
+      generateSummaryButton.className = "node-summary-generate-button";
       generateSummaryButton.id = "generate-summary-button";
       generateSummaryButton.type = "button";
-      generateSummaryButton.textContent = nodeSummaries[node.id]
-        ? "Regenerate node summary"
-        : "Generate node summary";
+      generateSummaryButton.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>';
+      generateSummaryButton.setAttribute("aria-label", "Generate node summary");
+      generateSummaryButton.title = "Generate node summary";
       const summaryResult = document.createElement("div");
       summaryResult.className = "node-summary-result";
       summaryResult.setAttribute("role", "status");
       summaryResult.setAttribute("aria-live", "polite");
       summaryResult.textContent = nodeSummaries[node.id] || "";
-      summaryControls.append(
-        modelControls,
-        generationSettingsButton,
-        generateSummaryButton,
-        summaryResult
-      );
+      summaryActions.append(modelControls, generationSettingsButton);
+      summaryToolbar.append(summaryActions, generateSummaryButton);
+      summaryComposer.append(summaryInput, summaryToolbar);
+      summaryControls.append(summaryResult, summaryComposer);
       generateSummaryButton.addEventListener("click", async () => {
         if (!openRouterKey && !defaultApiKey) {
           summaryResult.textContent = "Sign in to OpenRouter first.";
@@ -1198,7 +1347,9 @@
 
         const graphForSummary = graph;
         generateSummaryButton.disabled = true;
-        generateSummaryButton.textContent = "Generating summary...";
+        generateSummaryButton.setAttribute("aria-label", "Generating node summary");
+        generateSummaryButton.title = "Generating node summary";
+        summaryInput.disabled = true;
         summaryResult.textContent = "";
         const summaryContextEstimate = document.createElement("div");
         summaryContextEstimate.className = "summary-context-estimate";
@@ -1228,7 +1379,8 @@
             model: summaryModelIdForRequest,
             api_key: openRouterKey || defaultApiKey,
             context_length: summaryModel.context_length,
-            referer: window.location.origin
+            referer: window.location.origin,
+            user_instructions: summaryInput.value.trim()
           });
           const core = await browserCorePromise;
           const result = JSON.parse(await core.generate_node_summary(request, estimateJson => {
@@ -1249,7 +1401,6 @@
           }
           nodeSummaries[node.id] = summary.trim();
           summaryResult.textContent = nodeSummaries[node.id];
-          generateSummaryButton.textContent = "Regenerate node summary";
           try {
             await saveCurrentGraph();
           } catch (error) {
@@ -1261,9 +1412,15 @@
           console.error("Node summary generation failed:", error);
         } finally {
           generateSummaryButton.disabled = false;
-          generateSummaryButton.textContent = nodeSummaries[node.id]
-            ? "Regenerate node summary"
-            : "Generate node summary";
+          summaryInput.disabled = false;
+          generateSummaryButton.setAttribute("aria-label", "Generate node summary");
+          generateSummaryButton.title = "Generate node summary";
+        }
+      });
+      summaryInput.addEventListener("keydown", event => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          generateSummaryButton.click();
         }
       });
       const tabButtons = [];
@@ -1277,7 +1434,9 @@
         modelSelectionContext = activeTab === "summary" ? "summary" : "main";
         updateModelSelectLabel();
         if (activeTab === "summary") {
+          generationSettingsButton.textContent = "Settings";
           content.replaceChildren(summaryControls);
+          summaryInput.focus();
           return;
         }
 
@@ -1384,9 +1543,8 @@
         if (event.target === dialog) dialog.close();
       });
     }
-    const updateExportButtons = () => {
+    const updateGraphExportButton = () => {
       exportGraphGrButton.disabled = !generatedGraphSource;
-      exportGraphJsonButton.disabled = graph.nodes.length === 0;
     };
     const downloadTextFile = (filename, contents, type) => {
       const url = URL.createObjectURL(new Blob([contents], {type}));
@@ -1399,33 +1557,8 @@
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
-    const graphJsonForExport = () => JSON.stringify({
-      direction: graph.direction,
-      name: graph.name ?? null,
-      description: graph.description ?? null,
-      width: 320,
-      height: 200,
-      nodes: graph.nodes.map(({id, name, description, sources}) => ({
-        id,
-        name: name ?? null,
-        description: description ?? null,
-        sources,
-        width: 210,
-        height: 131
-      })),
-      edges: graph.edges.map(({from, to, label, dotted, arrow_start, arrow_end}) => ({
-        from,
-        to,
-        label,
-        dotted,
-        arrow_start,
-        arrow_end
-      }))
-    });
     exportGraphGrButton.addEventListener("click", () =>
       downloadTextFile("graph.gr", generatedGraphSource, "application/octet-stream"));
-    exportGraphJsonButton.addEventListener("click", () =>
-      downloadTextFile("graph.json", graphJsonForExport(), "application/json;charset=utf-8"));
     importGraphButton.addEventListener("click", () => importGraphFile.click());
     importGraphFile.addEventListener("change", () => {
       const file = importGraphFile.files[0];
@@ -1435,28 +1568,19 @@
       importGraphStatus.textContent = "Reading graph file...";
       file.text()
         .then(async contents => {
-          const extension = file.name.split(".").at(-1).toLowerCase();
-          let nextGraph;
-          let nextSource = "";
-          if (extension === "gr") {
-            const core = await browserCorePromise;
-            const parsed = JSON.parse(core.parse_graph_source(normalizeGraphSource(contents)));
-            nextGraph = prepareGraphForDisplay(parsed);
-            nextSource = normalizeGraphSource(contents);
-          } else if (extension === "json") {
-            const imported = JSON.parse(contents);
-            if (isStoredGeneratedGraph(imported)) {
-              nextGraph = prepareGraphForDisplay(imported.graph);
-              nextSource = imported.source;
-            } else {
-              nextGraph = prepareGraphForDisplay(imported);
-              if (typeof imported.source === "string") {
-                nextSource = normalizeGraphSource(imported.source);
-              }
-            }
-          } else {
-            throw new Error("Choose a .gr or .json graph file.");
+          if (file.name.split(".").at(-1).toLowerCase() !== "gr") {
+            throw new Error("Choose a .gr graph file.");
           }
+          const nextSource = normalizeGraphSource(contents);
+          const core = await browserCorePromise;
+          const parsed = JSON.parse(core.parse_graph_source(nextSource));
+          const nextGraph = {
+            ...parsed,
+            direction: parsed.direction === "LeftRight" ? "LR" : "TD",
+            width: 320,
+            height: 200,
+            nodes: parsed.nodes.map(node => ({...node, width: 210, height: 131}))
+          };
           const previousGraph = graph;
           const previousSource = generatedGraphSource;
           const previousSummaries = nodeSummaries;
@@ -1472,7 +1596,7 @@
             await renderGraph(graph);
             throw error;
           }
-          updateExportButtons();
+          updateGraphExportButton();
           try {
             await saveCurrentGraph();
           } catch (error) {
@@ -1534,72 +1658,6 @@
       return Object.fromEntries(Object.entries(value).filter(([nodeId, summary]) =>
         nodeIds.has(nodeId) && typeof summary === "string"
       ));
-    };
-    const prepareGraphForDisplay = value => {
-      if (!value || typeof value !== "object" || !Array.isArray(value.nodes) ||
-        !Array.isArray(value.edges) || value.nodes.length === 0) {
-        throw new Error("The JSON file does not contain a graph with nodes and edges.");
-      }
-      const direction = value.direction;
-      if (!["LR", "TD", "LeftRight", "TopDown"].includes(direction)) {
-        throw new Error("The graph direction must be LR or TD.");
-      }
-      const nodeIds = new Set();
-      const nodes = value.nodes.map(node => {
-        if (!node || typeof node.id !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(node.id) ||
-          node.id.toLowerCase() === "end" || nodeIds.has(node.id)) {
-          throw new Error("The graph contains an invalid or duplicate node ID.");
-        }
-        nodeIds.add(node.id);
-        if (node.name != null && typeof node.name !== "string" ||
-          node.description != null && typeof node.description !== "string") {
-          throw new Error(`Node ${node.id} has an invalid name or description.`);
-        }
-        if (node.sources != null && (!Array.isArray(node.sources) ||
-          node.sources.some(source => !source || typeof source.path !== "string"))) {
-          throw new Error(`Node ${node.id} has invalid source references.`);
-        }
-        return {
-          id: node.id,
-          name: node.name ?? null,
-          description: node.description ?? null,
-          sources: node.sources ?? [],
-          width: 210,
-          height: 131
-        };
-      });
-      const edges = value.edges.map(edge => {
-        if (!edge || typeof edge.from !== "string" || typeof edge.to !== "string" ||
-          !nodeIds.has(edge.from) || !nodeIds.has(edge.to) ||
-          typeof edge.label !== "string" ||
-          typeof edge.dotted !== "boolean" ||
-          typeof edge.arrow_start !== "boolean" ||
-          typeof edge.arrow_end !== "boolean") {
-          throw new Error("The graph contains an invalid edge.");
-        }
-        return {
-          from: edge.from,
-          to: edge.to,
-          label: edge.label,
-          dotted: edge.dotted,
-          arrow_start: edge.arrow_start,
-          arrow_end: edge.arrow_end
-        };
-      });
-      if (value.name != null && typeof value.name !== "string" ||
-        value.description != null && typeof value.description !== "string") {
-        throw new Error("The graph has an invalid name or description.");
-      }
-      return {
-        direction: direction === "LR" || direction === "LeftRight" ? "LR" : "TD",
-        name: value.name ?? null,
-        description: value.description ?? null,
-        width: 320,
-        height: 200,
-        nodes,
-        edges,
-        partials: Array.isArray(value.partials) ? value.partials : []
-      };
     };
     const readProjectFiles = async fileList => {
       const selected = Array.from(fileList)
@@ -1685,7 +1743,7 @@
       generateButton.disabled = true;
       generateButton.textContent = "Preparing...";
       generatedGraphSource = "";
-      updateExportButtons();
+      updateGraphExportButton();
       try {
         const request = JSON.stringify({
           files: projectFiles,
@@ -1710,7 +1768,7 @@
         generatedGraphSource = normalizeGraphSource(generated.source);
         nodeSummaries = {};
         await renderGraph(graph);
-        updateExportButtons();
+        updateGraphExportButton();
         try {
           await saveCurrentGraph();
         } catch (error) {
@@ -1723,7 +1781,7 @@
         generateButton.textContent = generationFailureLabel(message);
         generateButton.title = message;
         console.error("Graph generation failed:", error);
-        updateExportButtons();
+        updateGraphExportButton();
       } finally {
         generateButton.disabled = false;
       }
@@ -1770,7 +1828,18 @@
     };
     const updateModelSelectLabel = () => {
       const selectedModel = availableModels.find(model => model.id === getEffectiveModelId());
-      if (selectedModel) modelSelect.textContent = modelDisplayName(selectedModel);
+      if (modelSelectionContext === "summary") {
+        const selectedModelLabel = selectedModel ? modelDisplayName(selectedModel) : "Models";
+        modelSelect.textContent = selectedModelLabel;
+        modelSelect.title = selectedModelLabel;
+        modelSelect.setAttribute("aria-label", selectedModel
+          ? `Select model; current model: ${modelDisplayName(selectedModel)}`
+          : "Select model");
+      } else {
+        if (selectedModel) modelSelect.textContent = modelDisplayName(selectedModel);
+        modelSelect.title = "";
+        modelSelect.removeAttribute("aria-label");
+      }
     };
     const renderModels = () => {
       const query = modelSearch.value.trim().toLocaleLowerCase();
@@ -2892,12 +2961,12 @@
       const actionDivider = makeSvgElement("line", {
         class: "node-action-divider",
         stroke: "var(--line-color)",
-        "stroke-width": "1"
+        "stroke-width": "2"
       });
       const buttonDivider = makeSvgElement("line", {
         class: "node-action-divider",
         stroke: "var(--line-color)",
-        "stroke-width": "1"
+        "stroke-width": "2"
       });
       const makeNodeAction = (className, label, action) => {
         const control = makeSvgElement("g", {
@@ -3114,7 +3183,7 @@
         restoreErrors.push(`graph layout: ${error.message}`);
         console.error("Graph layout failed:", error);
       }
-      updateExportButtons();
+      updateGraphExportButton();
       if (restoreErrors.length > 0) {
         console.error(`Could not restore ${restoreErrors.join("; ")}`);
       }

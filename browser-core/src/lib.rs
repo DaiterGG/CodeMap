@@ -78,6 +78,8 @@ struct SummaryRequest {
     api_key: String,
     context_length: usize,
     referer: String,
+    #[serde(default)]
+    user_instructions: String,
 }
 
 #[derive(Deserialize)]
@@ -446,6 +448,12 @@ fn build_summary_prompt(request: &SummaryRequest) -> Result<SummaryPrompt, Strin
         current_node.name.as_deref().unwrap_or(&current_node.id),
         current_node.id
     );
+    let user_instructions = request.user_instructions.trim();
+    let prompt_instruction = if user_instructions.is_empty() {
+        prompt_instruction
+    } else {
+        format!("{prompt_instruction}\nAdditional user instructions: {user_instructions}")
+    };
     let context_limit_bytes = request.context_length.saturating_mul(90) / 100;
     let mut contexts = Vec::new();
     let mut included_connected_nodes = 0;
@@ -1218,6 +1226,7 @@ Main["<name>Main</name><source>missing.rs:full</source>"]
             api_key: "test-key".to_owned(),
             context_length,
             referer: "https://example.com".to_owned(),
+            user_instructions: String::new(),
         }
     }
 
@@ -1241,5 +1250,19 @@ Main["<name>Main</name><source>missing.rs:full</source>"]
         let error = build_summary_prompt(&request).unwrap_err();
 
         assert!(error.contains("current node's source context"));
+    }
+
+    #[test]
+    fn summary_context_includes_user_instructions() {
+        let mut request = summary_request(400);
+        request.user_instructions = "Focus on error handling.".to_owned();
+
+        let prepared = build_summary_prompt(&request).unwrap();
+
+        assert!(
+            prepared
+                .prompt
+                .contains("Additional user instructions: Focus on error handling.")
+        );
     }
 }
