@@ -182,7 +182,7 @@
       color: var(--muted-color);
     }
 
-    .node-panel-content:has(.node-summary-controls) {
+    .node-panel-content:has(.node-chat-controls) {
       display: flex;
       flex-direction: column;
     }
@@ -317,27 +317,98 @@
       color: var(--muted-color);
     }
 
-    .node-summary-controls {
+    .node-chat-controls {
       display: flex;
       flex: 1 1 auto;
       flex-direction: column;
       min-height: 0;
-      gap: 16px;
+      gap: 12px;
     }
 
-    .node-summary-composer {
+    .node-chat-messages {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-height: 0;
+      gap: 10px;
+      overflow: auto;
+      box-sizing: border-box;
+      padding: 8px 12px 8px 0;
+      scrollbar-gutter: stable;
+    }
+
+    .node-chat-message {
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border: 1px solid var(--canvas-border);
+      border-radius: 12px;
+      color: var(--text-color);
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .node-chat-message-user {
+      align-self: flex-end;
+      background: var(--button-bg);
+    }
+
+    button.node-chat-message-user {
+      width: fit-content;
+      font: inherit;
+      font-size: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    button.node-chat-message-user:disabled {
+      cursor: wait;
+    }
+
+    .node-chat-message-edit-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .node-chat-message-edit-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .node-chat-message-edit-actions .control-button {
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .node-chat-message-edit-error {
+      color: var(--muted-color);
+      font-size: 12px;
+    }
+
+    .node-chat-message-assistant {
+      align-self: flex-start;
+    }
+
+    .node-chat-message-error {
+      align-self: flex-start;
+      color: var(--muted-color);
+    }
+
+    .node-chat-composer {
       display: flex;
       flex: 0 0 auto;
       flex-direction: column;
       gap: 8px;
-      margin-top: auto;
       padding: 10px;
       border: 2px solid var(--line-color);
       border-radius: 12px;
       background: var(--button-bg);
     }
 
-    .node-summary-input {
+    .node-chat-input {
       appearance: none;
       box-sizing: border-box;
       width: 100%;
@@ -349,51 +420,52 @@
       color: var(--text-color);
       background: transparent;
       font: inherit;
+      font-size: 14px;
       resize: none;
     }
 
-    .node-summary-input::-webkit-resizer {
+    .node-chat-input::-webkit-resizer {
       display: none;
     }
 
-    .node-summary-input:focus,
-    .node-summary-input:focus-visible {
+    .node-chat-input:focus,
+    .node-chat-input:focus-visible {
       border: 0;
       outline: none;
       box-shadow: none;
     }
 
-    .node-summary-input::placeholder {
+    .node-chat-input::placeholder {
       color: var(--muted-color);
       opacity: 1;
     }
 
-    .node-summary-toolbar,
-    .node-summary-actions {
+    .node-chat-toolbar,
+    .node-chat-actions {
       display: flex;
       align-items: center;
       gap: 4px;
     }
 
-    .node-summary-toolbar {
+    .node-chat-toolbar {
       justify-content: space-between;
     }
 
-    .node-summary-actions .model-controls {
+    .node-chat-actions .model-controls {
       width: auto;
       gap: 0;
     }
 
-    .node-summary-actions .model-picker {
+    .node-chat-actions .model-picker {
       width: auto;
     }
 
-    .node-summary-actions #model-select {
+    .node-chat-actions #model-select {
       width: auto;
       max-width: min(220px, calc(100vw - 120px));
     }
 
-    .node-summary-actions .node-summary-tool-button {
+    .node-chat-actions .node-chat-tool-button {
       padding: 3px 6px;
       border: 0;
       border-radius: 8px;
@@ -404,18 +476,18 @@
       cursor: pointer;
     }
 
-    .node-summary-actions .node-summary-tool-button:hover {
+    .node-chat-actions .node-chat-tool-button:hover {
       color: var(--text-color);
       background: var(--button-hover-bg);
     }
 
-    .node-summary-actions .node-summary-tool-button:focus-visible {
+    .node-chat-actions .node-chat-tool-button:focus-visible {
       color: var(--text-color);
       background: var(--button-hover-bg);
       outline: none;
     }
 
-    #generate-summary-button {
+    #send-chat-message-button {
       display: grid;
       flex: 0 0 30px;
       width: 30px;
@@ -429,31 +501,25 @@
       cursor: pointer;
     }
 
-    #generate-summary-button:hover,
-    #generate-summary-button:focus-visible {
+    #send-chat-message-button:hover,
+    #send-chat-message-button:focus-visible {
       color: var(--text-color);
       background: var(--button-hover-bg);
     }
 
-    #generate-summary-button:focus-visible {
+    #send-chat-message-button:focus-visible {
       outline: 1px solid var(--canvas-border);
       outline-offset: 2px;
     }
 
-    #generate-summary-button svg {
+    #send-chat-message-button svg {
       width: 17px;
       height: 17px;
     }
 
-    #generate-summary-button:disabled {
+    #send-chat-message-button:disabled {
       cursor: wait;
       opacity: 0.5;
-    }
-
-    .node-summary-result {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      color: var(--text-color);
     }
 
     .page-identity {
@@ -491,25 +557,71 @@
       gap: 8px;
     }
 
-    .web-control {
+    .model-settings-row {
       display: flex;
-      flex-direction: column;
       align-items: stretch;
-      justify-content: space-between;
-      gap: 12px;
+      gap: 6px;
     }
 
-    #generate-button {
-      width: 100%;
-      border-color: var(--muted-color);
+    .model-settings-row .model-controls {
+      flex: 1 1 auto;
+      min-width: 0;
     }
 
-    #upload-code-button {
+    .generation-settings-button {
+      display: grid;
+      position: relative;
       box-sizing: border-box;
-      width: 100%;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      padding: 0;
+    }
+
+    .generation-settings-button svg {
+      display: block;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 18px;
+      height: 18px;
+      transform: translate(-50%, -50%);
+    }
+
+    .generation-actions-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .generation-actions-row #upload-code-button,
+    .generation-actions-row #generate-button {
+      box-sizing: border-box;
+      flex: 1 1 0;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    #generate-button {
+      border-color: #fff;
+      color: #000;
+      background: #fff;
+    }
+
+    #generate-button:hover:not(:disabled):not([aria-disabled="true"]) {
+      background: #e6e6e6;
+    }
+
+    #generate-button[aria-disabled="true"] {
+      border-color: #888;
+      color: #888;
+      background: var(--page-bg);
+      cursor: pointer;
+    }
+
+    #generate-button:disabled {
+      cursor: not-allowed;
     }
 
     .model-controls {
@@ -946,9 +1058,6 @@
         height: 2px;
       }
 
-      .web-control {
-        flex-direction: row;
-      }
     }
   </style>
 </head>
@@ -961,25 +1070,32 @@
         <div class="graph-details" id="graph-details">{{GRAPH_DETAILS}}</div>
       </div>
       <div class="page-controls">
-        <button class="control-button" id="upload-code-button" type="button">Upload code</button>
-        <div class="web-control">
-          <button class="control-button" id="generation-settings-button" type="button"
-            aria-haspopup="dialog" aria-controls="generation-settings-dialog">Generation Settings</button>
-        </div>
-        <div class="model-controls">
-          <div class="model-picker" id="model-picker">
-            <button class="control-button" id="model-select" type="button" disabled
-              aria-haspopup="listbox" aria-expanded="false" aria-controls="model-options">Loading models...</button>
-            <div class="model-menu" id="model-menu" hidden>
-              <input class="control-button model-search" id="model-search" type="search"
-                placeholder="Search models..." autocomplete="off" aria-label="Search models">
-              <div class="model-options" id="model-options" role="listbox" aria-label="Models"></div>
+        <div class="model-settings-row">
+          <div class="model-controls">
+            <div class="model-picker" id="model-picker">
+              <button class="control-button" id="model-select" type="button" disabled
+                aria-haspopup="listbox" aria-expanded="false" aria-controls="model-options">Loading models...</button>
+              <div class="model-menu" id="model-menu" hidden>
+                <input class="control-button model-search" id="model-search" type="search"
+                  placeholder="Search models..." autocomplete="off" aria-label="Search models">
+                <div class="model-options" id="model-options" role="listbox" aria-label="Models"></div>
+              </div>
             </div>
           </div>
+          <button class="control-button generation-settings-button" id="generation-settings-button" type="button"
+            aria-label="Generation Settings" title="Generation Settings" aria-haspopup="dialog"
+            aria-controls="generation-settings-dialog">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.28 7.28 0 0 0-1.63-.94l-.36-2.54A.49.49 0 0 0 13.87 2h-3.74a.49.49 0 0 0-.49.42L9.28 4.96c-.59.23-1.13.54-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.73 8.48a.5.5 0 0 0 .12.64L4.88 10.7c-.04.3-.06.61-.06.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.61.22l2.39-.96c.5.4 1.04.71 1.63.94l.36 2.54c.04.24.25.42.49.42h3.74c.24 0 .45-.18.49-.42l.36-2.54c.59-.23 1.13-.54 1.63-.94l2.39.96c.23.09.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"></path>
+            </svg>
+          </button>
         </div>
         <button class="control-button" id="export-button" type="button" aria-haspopup="dialog"
           aria-controls="export-dialog">Import / Export Graph</button>
-        <button class="control-button" id="generate-button" type="button">Generate</button>
+        <div class="generation-actions-row">
+          <button class="control-button" id="upload-code-button" type="button">Upload code</button>
+          <button class="control-button" id="generate-button" type="button">Generate</button>
+        </div>
       </div>
     </div>
     <div class="resize-handle" id="sidebar-resize-handle" role="separator" aria-orientation="vertical"
@@ -1092,17 +1208,28 @@
     let projectFiles = [];
     let embeddedSources = {};
     let generatedGraphSource = "";
+    let workspaceReady = false;
+    let generationInProgress = false;
     const defaultApiKey =
       JSON.parse(document.getElementById("default-api-key-a").textContent) +
       JSON.parse(document.getElementById("default-api-key-b").textContent);
-    let nodeSummaries = {};
+    const nodeChats = new Map();
     uploadCodeButton.disabled = true;
     generateButton.disabled = true;
+    const updateGenerateButtonState = () => {
+      generateButton.disabled = !workspaceReady || generationInProgress;
+      generateButton.setAttribute(
+        "aria-disabled",
+        String(projectFiles.length === 0 || generationInProgress || !workspaceReady)
+      );
+    };
+    updateGenerateButtonState();
     let openRouterKey = sessionStorage.getItem("openrouter-api-key") || "";
     const WORKSPACE_DB_NAME = "codemap-workspace";
     const WORKSPACE_STORE_NAME = "state";
     const SAVED_MODEL_KEY = "codemap-selected-model";
-    const SAVED_SUMMARY_MODEL_KEY = "codemap-summary-selected-model";
+    const MODEL_CATALOG_KEY = "model-catalog";
+    const MODEL_CATALOG_TTL_MS = 60 * 60 * 1000;
     const SAVED_SIDEBAR_WIDTH_KEY = "codemap-sidebar-width";
     const readSavedNumber = key => {
       try {
@@ -1123,7 +1250,6 @@
     };
     let savedSidebarWidth = readSavedNumber(SAVED_SIDEBAR_WIDTH_KEY);
     let savedModelId = readSavedModel(SAVED_MODEL_KEY);
-    let summaryModelId = readSavedModel(SAVED_SUMMARY_MODEL_KEY);
     const saveSetting = (key, value) => {
       try {
         localStorage.setItem(key, String(value));
@@ -1163,8 +1289,7 @@
     };
     const saveCurrentGraph = () => setWorkspaceItem("generated-graph", {
       graph,
-      source: generatedGraphSource,
-      nodeSummaries: {...nodeSummaries}
+      source: generatedGraphSource
     });
     const generationFailureLabel = error =>
       /429|rate.?limit/i.test(error) ? "Generation failed: ratelimited" : "Generation failed";
@@ -1242,22 +1367,16 @@
     const recommendedModelIds = new Set([DEFAULT_MODEL_ID]);
     let availableModels = [];
     let selectedModelId = "";
-    let modelSelectionContext = "main";
-    const getEffectiveModelId = () => modelSelectionContext === "summary" && summaryModelId
-      ? summaryModelId
-      : selectedModelId;
+    const getEffectiveModelId = () => selectedModelId;
     const restoreSidebarControls = () => {
       closeModelMenu();
-      modelSelectionContext = "main";
       updateModelSelectLabel();
-      modelSelect.classList.remove("node-summary-tool-button");
-      generationSettingsButton.classList.remove("node-summary-tool-button");
-      generationSettingsButton.textContent = "Generation Settings";
-      modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
+      modelSelect.classList.remove("node-chat-tool-button");
       generationSettingsButtonParent.insertBefore(
         generationSettingsButton,
         generationSettingsButtonNextSibling
       );
+      modelControlsParent.insertBefore(modelControls, modelControlsNextSibling);
       pageHeader.replaceChildren(...defaultSidebarNodes);
     };
     const showNodePanel = node => {
@@ -1294,133 +1413,235 @@
       content.className = "node-panel-content";
       content.setAttribute("role", "tabpanel");
       content.setAttribute("aria-live", "polite");
-      const summaryControls = document.createElement("div");
-      summaryControls.className = "node-summary-controls";
-      const summaryComposer = document.createElement("div");
-      summaryComposer.className = "node-summary-composer";
-      const summaryInput = document.createElement("textarea");
-      summaryInput.className = "node-summary-input";
-      summaryInput.rows = 3;
-      summaryInput.value = "Generate node summary";
-      summaryInput.setAttribute("aria-label", "Summary instructions");
-      const summaryToolbar = document.createElement("div");
-      summaryToolbar.className = "node-summary-toolbar";
-      const summaryActions = document.createElement("div");
-      summaryActions.className = "node-summary-actions";
-      modelSelect.classList.add("node-summary-tool-button");
-      generationSettingsButton.classList.add("node-summary-tool-button");
-      generationSettingsButton.textContent = "Settings";
-      const generateSummaryButton = document.createElement("button");
-      generateSummaryButton.className = "node-summary-generate-button";
-      generateSummaryButton.id = "generate-summary-button";
-      generateSummaryButton.type = "button";
-      generateSummaryButton.innerHTML =
+      const chatControls = document.createElement("div");
+      chatControls.className = "node-chat-controls";
+      const chatMessages = document.createElement("div");
+      chatMessages.className = "node-chat-messages";
+      chatMessages.setAttribute("role", "log");
+      chatMessages.setAttribute("aria-live", "polite");
+      const chatComposer = document.createElement("div");
+      chatComposer.className = "node-chat-composer";
+      const chatInput = document.createElement("textarea");
+      chatInput.className = "node-chat-input";
+      chatInput.rows = 3;
+      chatInput.placeholder = "Ask about this node...";
+      chatInput.setAttribute("aria-label", "Chat message");
+      const chatToolbar = document.createElement("div");
+      chatToolbar.className = "node-chat-toolbar";
+      const chatActions = document.createElement("div");
+      chatActions.className = "node-chat-actions";
+      modelSelect.classList.add("node-chat-tool-button");
+      const sendChatMessageButton = document.createElement("button");
+      sendChatMessageButton.id = "send-chat-message-button";
+      sendChatMessageButton.type = "button";
+      sendChatMessageButton.innerHTML =
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
         'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>';
-      generateSummaryButton.setAttribute("aria-label", "Generate node summary");
-      generateSummaryButton.title = "Generate node summary";
-      const summaryResult = document.createElement("div");
-      summaryResult.className = "node-summary-result";
-      summaryResult.setAttribute("role", "status");
-      summaryResult.setAttribute("aria-live", "polite");
-      summaryResult.textContent = nodeSummaries[node.id] || "";
-      summaryActions.append(modelControls, generationSettingsButton);
-      summaryToolbar.append(summaryActions, generateSummaryButton);
-      summaryComposer.append(summaryInput, summaryToolbar);
-      summaryControls.append(summaryResult, summaryComposer);
-      generateSummaryButton.addEventListener("click", async () => {
+      sendChatMessageButton.setAttribute("aria-label", "Send message");
+      sendChatMessageButton.title = "Send message";
+      chatActions.append(modelControls, generationSettingsButton);
+      chatToolbar.append(chatActions, sendChatMessageButton);
+      chatComposer.append(chatInput, chatToolbar);
+      chatControls.append(chatMessages, chatComposer);
+      const chat = nodeChats.get(node.id) || {messages: [], displayMessages: [], pending: false};
+      nodeChats.set(node.id, chat);
+      chat.input = chatInput;
+      chat.sendButton = sendChatMessageButton;
+      chatInput.disabled = chat.pending;
+      sendChatMessageButton.disabled = chat.pending;
+      const renderChatMessages = () => {
+        chatMessages.replaceChildren();
+        for (const [displayIndex, message] of chat.displayMessages.entries()) {
+          const bubble = document.createElement(message.role === "user" ? "button" : "div");
+          bubble.className = `node-chat-message node-chat-message-${message.role}`;
+          if (message.role === "user") {
+            bubble.type = "button";
+            bubble.disabled = chat.pending;
+            bubble.setAttribute("aria-label", `Edit message: ${message.content}`);
+            bubble.title = "Click to edit this message";
+            bubble.addEventListener("click", () => openUserMessageEditor(displayIndex));
+          }
+          bubble.textContent = message.content;
+          chatMessages.append(bubble);
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      };
+      renderChatMessages();
+      const addChatMessage = (role, content, requestIndex) => {
+        chat.displayMessages.push({role, content, requestIndex});
+        renderChatMessages();
+      };
+      const buildUserRequestContent = (userRequest, requestIndex) => requestIndex === 0
+        ? [
+            `Selected node:\n${JSON.stringify(node, null, 2)}`,
+            `Full graph:\n${JSON.stringify(graph, null, 2)}`,
+            "Focus only on the selected node; use the full graph as context.",
+            "The next part is the user's request:",
+            userRequest
+          ].join("\n\n")
+        : userRequest;
+      const setChatPending = pending => {
+        chat.pending = pending;
+        chat.input.disabled = pending;
+        chat.sendButton.disabled = pending;
+        for (const userMessage of chatMessages.querySelectorAll("button.node-chat-message-user")) {
+          userMessage.disabled = pending;
+        }
+        if (chat.editSubmitButton) chat.editSubmitButton.disabled = pending;
+        if (chat.editCancelButton) chat.editCancelButton.disabled = pending;
+      };
+      const getChatErrorMessage = error =>
+        typeof error?.message === "string"
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Could not send this message.";
+      const openUserMessageEditor = displayIndex => {
+        if (chat.pending) return;
+        const message = chat.displayMessages[displayIndex];
+        if (message?.role !== "user" || !Number.isInteger(message.requestIndex)) return;
+
+        const editor = document.createElement("div");
+        editor.className =
+          "node-chat-message node-chat-message-user node-chat-message-edit-form";
+        const editorInput = document.createElement("textarea");
+        editorInput.className = "node-chat-input";
+        editorInput.rows = 3;
+        editorInput.value = message.content;
+        editorInput.setAttribute("aria-label", "Edit message");
+        const editorError = document.createElement("div");
+        editorError.className = "node-chat-message-edit-error";
+        editorError.setAttribute("role", "status");
+        const actions = document.createElement("div");
+        actions.className = "node-chat-message-edit-actions";
+        const cancelButton = document.createElement("button");
+        cancelButton.className = "control-button";
+        cancelButton.type = "button";
+        cancelButton.textContent = "Cancel";
+        const submitButton = document.createElement("button");
+        submitButton.className = "control-button";
+        submitButton.type = "button";
+        submitButton.textContent = "Resend";
+        submitButton.setAttribute("aria-label", "Resend edited message");
+        actions.append(cancelButton, submitButton);
+        editor.append(editorInput, editorError, actions);
+
+        const userBubble = chatMessages.children[displayIndex];
+        userBubble.replaceWith(editor);
+        chat.editSubmitButton = submitButton;
+        chat.editCancelButton = cancelButton;
+        cancelButton.addEventListener("click", () => {
+          chat.editSubmitButton = null;
+          chat.editCancelButton = null;
+          renderChatMessages();
+        });
+        const resendEditedMessage = async () => {
+          const userRequest = editorInput.value.trim();
+          if (!userRequest || chat.pending) return;
+          if (!openRouterKey && !defaultApiKey) {
+            editorError.textContent = "Sign in to OpenRouter first.";
+            return;
+          }
+          const modelId = selectedModelId;
+          if (!modelId) {
+            editorError.textContent = "Select a model before sending a message.";
+            return;
+          }
+
+          const requestIndex = message.requestIndex;
+          const candidateMessages = chat.messages.slice(0, requestIndex);
+          candidateMessages.push({
+            role: "user",
+            content: buildUserRequestContent(userRequest, requestIndex)
+          });
+          setChatPending(true);
+          try {
+            const request = JSON.stringify({
+              messages: candidateMessages,
+              model: modelId,
+              api_key: openRouterKey || defaultApiKey,
+              referer: window.location.origin
+            });
+            const core = await browserCorePromise;
+            const answer = await core.complete_chat(request);
+            chat.messages = [
+              ...candidateMessages,
+              {role: "assistant", content: answer}
+            ];
+            chat.displayMessages = chat.displayMessages.slice(0, displayIndex);
+            chat.displayMessages.push({role: "user", content: userRequest, requestIndex});
+            chat.displayMessages.push({role: "assistant", content: answer});
+            chat.editSubmitButton = null;
+            chat.editCancelButton = null;
+            renderChatMessages();
+          } catch (error) {
+            editorError.textContent = getChatErrorMessage(error);
+            console.error("Edited chat request failed:", error);
+          } finally {
+            setChatPending(false);
+            if (editorInput.isConnected) editorInput.focus();
+          }
+        };
+        submitButton.addEventListener("click", resendEditedMessage);
+        editorInput.addEventListener("keydown", event => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            resendEditedMessage();
+          }
+        });
+        editorInput.focus();
+      };
+      const sendChatMessage = async () => {
+        const userRequest = chatInput.value.trim();
+        if (!userRequest || chat.pending) return;
         if (!openRouterKey && !defaultApiKey) {
-          summaryResult.textContent = "Sign in to OpenRouter first.";
+          addChatMessage("error", "Sign in to OpenRouter first.");
           return;
         }
-        const summaryModelIdForRequest = getEffectiveModelId();
-        if (!summaryModelIdForRequest) {
-          summaryResult.textContent = "Select a model to generate a summary.";
-          return;
-        }
-        const summaryModel = availableModels.find(model => model.id === summaryModelIdForRequest);
-        if (!Number.isSafeInteger(summaryModel?.context_length) || summaryModel.context_length <= 0) {
-          summaryResult.textContent = "The selected model's context window is unavailable.";
+        const modelId = selectedModelId;
+        if (!modelId) {
+          addChatMessage("error", "Select a model before sending a message.");
           return;
         }
 
-        const graphForSummary = graph;
-        generateSummaryButton.disabled = true;
-        generateSummaryButton.setAttribute("aria-label", "Generating node summary");
-        generateSummaryButton.title = "Generating node summary";
-        summaryInput.disabled = true;
-        summaryResult.textContent = "";
-        const summaryContextEstimate = document.createElement("div");
-        summaryContextEstimate.className = "summary-context-estimate";
-        summaryContextEstimate.setAttribute("role", "status");
-        summaryContextEstimate.setAttribute("aria-live", "polite");
+        const requestIndex = chat.messages.length;
+        const candidateMessages = [
+          ...chat.messages,
+          {
+            role: "user",
+            content: buildUserRequestContent(userRequest, requestIndex)
+          }
+        ];
+        addChatMessage("user", userRequest, requestIndex);
+        chatInput.value = "";
+        setChatPending(true);
         try {
-          const connectedNodes = graphForSummary.nodes.filter(candidate =>
-            candidate.id !== node.id && graphForSummary.edges.some(edge =>
-              edge.from === node.id && edge.to === candidate.id ||
-              edge.to === node.id && edge.from === candidate.id
-            )
-          );
-          const sourcePaths = new Set(
-            [node, ...connectedNodes].flatMap(contextNode =>
-              (contextNode.sources ?? []).map(reference => reference.path)
-            )
-          );
-          const files = await Promise.all([...sourcePaths].map(async path => ({
-            path,
-            contents: await getSourceFileContents(path)
-          })));
           const request = JSON.stringify({
-            nodes: graphForSummary.nodes.map(({id, name, sources}) => ({id, name, sources})),
-            edges: graphForSummary.edges.map(({from, to}) => ({from, to})),
-            node_id: node.id,
-            files,
-            model: summaryModelIdForRequest,
+            messages: candidateMessages,
+            model: modelId,
             api_key: openRouterKey || defaultApiKey,
-            context_length: summaryModel.context_length,
-            referer: window.location.origin,
-            user_instructions: summaryInput.value.trim()
+            referer: window.location.origin
           });
           const core = await browserCorePromise;
-          const result = JSON.parse(await core.generate_node_summary(request, estimateJson => {
-            const estimate = JSON.parse(estimateJson);
-            const omittedConnectedNodes =
-              estimate.total_connected_nodes - estimate.included_connected_nodes;
-            summaryContextEstimate.textContent =
-              `Estimated input: ${estimate.estimated_bytes.toLocaleString()} tokens ` +
-              `(UTF-8 byte estimate; 90% limit: ${estimate.context_limit_bytes.toLocaleString()} tokens). ` +
-              `Included ${estimate.included_connected_nodes} of ${estimate.total_connected_nodes} connected nodes` +
-              (omittedConnectedNodes ? `; omitted ${omittedConnectedNodes} to fit the context.` : ".");
-            summaryControls.insertBefore(summaryContextEstimate, summaryResult);
-          }));
-          const summary = result.summary;
-          if (graph !== graphForSummary) {
-            summaryResult.textContent = "The graph changed while generating; this summary was discarded.";
-            return;
-          }
-          nodeSummaries[node.id] = summary.trim();
-          summaryResult.textContent = nodeSummaries[node.id];
-          try {
-            await saveCurrentGraph();
-          } catch (error) {
-            summaryResult.textContent += `\n\nCould not cache this summary: ${error.message}`;
-            console.error("Node summary could not be cached:", error);
-          }
+          const answer = await core.complete_chat(request);
+          chat.messages = [...candidateMessages, {role: "assistant", content: answer}];
+          addChatMessage("assistant", answer);
         } catch (error) {
-          summaryResult.textContent = error.message || "Could not generate the node summary.";
-          console.error("Node summary generation failed:", error);
+          chat.displayMessages.pop();
+          chatInput.value = userRequest;
+          addChatMessage("error", getChatErrorMessage(error));
+          console.error("Chat request failed:", error);
         } finally {
-          generateSummaryButton.disabled = false;
-          summaryInput.disabled = false;
-          generateSummaryButton.setAttribute("aria-label", "Generate node summary");
-          generateSummaryButton.title = "Generate node summary";
+          setChatPending(false);
+          if (chatInput.isConnected) chatInput.focus();
         }
-      });
-      summaryInput.addEventListener("keydown", event => {
+      };
+      sendChatMessageButton.addEventListener("click", sendChatMessage);
+      chatInput.addEventListener("keydown", event => {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
-          generateSummaryButton.click();
+          sendChatMessage();
         }
       });
       const tabButtons = [];
@@ -1431,12 +1652,11 @@
           button.tabIndex = selected ? 0 : -1;
         }
         closeModelMenu();
-        modelSelectionContext = activeTab === "summary" ? "summary" : "main";
         updateModelSelectLabel();
-        if (activeTab === "summary") {
-          generationSettingsButton.textContent = "Settings";
-          content.replaceChildren(summaryControls);
-          summaryInput.focus();
+        if (activeTab === "chat") {
+          content.replaceChildren(chatControls);
+          renderChatMessages();
+          chatInput.focus();
           return;
         }
 
@@ -1517,13 +1737,13 @@
         }
         content.replaceChildren(sourceFileList);
       };
-      for (const tabName of ["code", "summary"]) {
+      for (const tabName of ["code", "chat"]) {
         const button = document.createElement("button");
         button.className = "node-panel-tab";
         button.type = "button";
         button.setAttribute("role", "tab");
         button.dataset.tab = tabName;
-        button.textContent = tabName === "summary" ? "Summary" : "Code";
+        button.textContent = tabName === "chat" ? "Chat" : "Code";
         button.addEventListener("click", () => setActiveTab(tabName));
         tabs.append(button);
         tabButtons.push(button);
@@ -1583,19 +1803,17 @@
           };
           const previousGraph = graph;
           const previousSource = generatedGraphSource;
-          const previousSummaries = nodeSummaries;
           graph = nextGraph;
           generatedGraphSource = nextSource;
-          nodeSummaries = {};
           try {
             await renderGraph(graph);
           } catch (error) {
             graph = previousGraph;
             generatedGraphSource = previousSource;
-            nodeSummaries = previousSummaries;
             await renderGraph(graph);
             throw error;
           }
+          nodeChats.clear();
           updateGraphExportButton();
           try {
             await saveCurrentGraph();
@@ -1629,6 +1847,7 @@
         : "Upload code";
       uploadCodeButton.textContent = label;
       uploadCodeButton.title = label;
+      updateGenerateButtonState();
     };
     const isStoredFileList = value => Array.isArray(value) &&
       value.every(file => typeof file?.path === "string" && typeof file?.contents === "string");
@@ -1652,13 +1871,6 @@
       Array.isArray(value.nodes) && Array.isArray(value.edges);
     const isStoredGeneratedGraph = value => value && typeof value === "object" &&
       isStoredGraph(value.graph) && typeof value.source === "string";
-    const getStoredNodeSummaries = (value, storedGraph) => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-      const nodeIds = new Set(storedGraph.nodes.map(node => node.id));
-      return Object.fromEntries(Object.entries(value).filter(([nodeId, summary]) =>
-        nodeIds.has(nodeId) && typeof summary === "string"
-      ));
-    };
     const readProjectFiles = async fileList => {
       const selected = Array.from(fileList)
         .map(file => ({
@@ -1721,7 +1933,7 @@
     });
     generateButton.addEventListener("click", async () => {
       if (projectFiles.length === 0) {
-        generateButton.textContent = "Choose a local folder";
+        uploadDialog.showModal();
         return;
       }
       if (!selectedModelId) {
@@ -1740,7 +1952,8 @@
       if (!window.confirm(
         `Send ${projectFiles.length} selected source files to OpenRouter for graph generation?`
       )) return;
-      generateButton.disabled = true;
+      generationInProgress = true;
+      updateGenerateButtonState();
       generateButton.textContent = "Preparing...";
       generatedGraphSource = "";
       updateGraphExportButton();
@@ -1766,7 +1979,7 @@
           edges: generated.graph.edges
         };
         generatedGraphSource = normalizeGraphSource(generated.source);
-        nodeSummaries = {};
+        nodeChats.clear();
         await renderGraph(graph);
         updateGraphExportButton();
         try {
@@ -1783,7 +1996,8 @@
         console.error("Graph generation failed:", error);
         updateGraphExportButton();
       } finally {
-        generateButton.disabled = false;
+        generationInProgress = false;
+        updateGenerateButtonState();
       }
     });
     const closeModelMenu = () => {
@@ -1828,18 +2042,9 @@
     };
     const updateModelSelectLabel = () => {
       const selectedModel = availableModels.find(model => model.id === getEffectiveModelId());
-      if (modelSelectionContext === "summary") {
-        const selectedModelLabel = selectedModel ? modelDisplayName(selectedModel) : "Models";
-        modelSelect.textContent = selectedModelLabel;
-        modelSelect.title = selectedModelLabel;
-        modelSelect.setAttribute("aria-label", selectedModel
-          ? `Select model; current model: ${modelDisplayName(selectedModel)}`
-          : "Select model");
-      } else {
-        if (selectedModel) modelSelect.textContent = modelDisplayName(selectedModel);
-        modelSelect.title = "";
-        modelSelect.removeAttribute("aria-label");
-      }
+      if (selectedModel) modelSelect.textContent = modelDisplayName(selectedModel);
+      modelSelect.title = "";
+      modelSelect.removeAttribute("aria-label");
     };
     const renderModels = () => {
       const query = modelSearch.value.trim().toLocaleLowerCase();
@@ -1880,14 +2085,9 @@
           option.setAttribute("aria-selected", String(model.id === getEffectiveModelId()));
           option.textContent = modelDisplayName(model);
           option.addEventListener("click", () => {
-            if (modelSelectionContext === "summary") {
-              summaryModelId = model.id;
-              saveSetting(SAVED_SUMMARY_MODEL_KEY, summaryModelId);
-            } else {
-              selectedModelId = model.id;
-              savedModelId = selectedModelId;
-              saveSetting(SAVED_MODEL_KEY, selectedModelId);
-            }
+            selectedModelId = model.id;
+            savedModelId = selectedModelId;
+            saveSetting(SAVED_MODEL_KEY, selectedModelId);
             updateModelSelectLabel();
             closeModelMenu();
           });
@@ -1938,49 +2138,94 @@
       if (effectiveApiKey()) headers.Authorization = "Bearer " + effectiveApiKey();
       return headers;
     };
+    const applyAvailableModels = models => {
+      availableModels = models;
+      const preferred = availableModels.find(model => model.id === savedModelId) ||
+        availableModels.find(model => model.id === DEFAULT_MODEL_ID);
+      selectedModelId = preferred?.id || availableModels[0]?.id || "";
+      savedModelId = selectedModelId;
+      if (selectedModelId) saveSetting(SAVED_MODEL_KEY, selectedModelId);
+      updateModelSelectLabel();
+      if (!selectedModelId) modelSelect.textContent = "No models available";
+      modelSelect.disabled = availableModels.length === 0;
+      renderModels();
+    };
+    let modelFetchPromise = null;
     const loadModels = async () => {
-      modelSelect.disabled = true;
-      modelSelect.textContent = "Loading models...";
+      let cachedCatalog = null;
       try {
-        const response = await fetch(
-          "https://openrouter.ai/api/v1/models?input_modalities=text&output_modalities=text",
-          {headers: openRouterHeaders(), cache: "no-store"}
-        );
-        if (!response.ok) {
-          throw new Error(`Model request failed with status ${response.status}`);
-        }
-        const catalog = await response.json();
-        availableModels = catalog.data
-          .filter(model =>
-            model.architecture?.input_modalities?.includes("text") &&
-            model.architecture?.output_modalities?.includes("text") &&
-            !model.id.endsWith(":batch") &&
-            !model.id.endsWith(":completion")
-          )
-          .map(model => ({
-            ...model,
-            is_free: Number(model.pricing?.prompt) === 0 &&
-              Number(model.pricing?.completion) === 0
-          }));
-        const preferred = availableModels.find(model => model.id === savedModelId) ||
-          availableModels.find(model => model.id === DEFAULT_MODEL_ID);
-        selectedModelId = preferred?.id || availableModels[0]?.id || "";
-        savedModelId = selectedModelId;
-        if (selectedModelId) saveSetting(SAVED_MODEL_KEY, selectedModelId);
-        const selectedModel = availableModels.find(model => model.id === selectedModelId);
-        if (summaryModelId && !availableModels.some(model => model.id === summaryModelId)) {
-          summaryModelId = "";
-        }
-        updateModelSelectLabel();
-        if (!selectedModel) {
-          modelSelect.textContent = "No models available";
-        }
-        modelSelect.disabled = availableModels.length === 0;
-        renderModels();
+        cachedCatalog = await getWorkspaceItem(MODEL_CATALOG_KEY);
       } catch (error) {
-        modelSelect.textContent = "Could not load models";
-        console.error("Could not load models:", error);
+        console.warn("Could not read the cached model catalog:", error);
       }
+
+      const hasCachedCatalog = Number.isFinite(cachedCatalog?.fetchedAt) &&
+        Array.isArray(cachedCatalog.models) &&
+        cachedCatalog.models.every(model =>
+          typeof model?.id === "string" && typeof model.name === "string"
+        );
+      if (hasCachedCatalog) {
+        applyAvailableModels(cachedCatalog.models);
+        const cacheAge = Date.now() - cachedCatalog.fetchedAt;
+        if (cacheAge >= 0 && cacheAge < MODEL_CATALOG_TTL_MS) return;
+      }
+
+      if (modelFetchPromise) return modelFetchPromise;
+      if (availableModels.length === 0) {
+        modelSelect.disabled = true;
+        modelSelect.textContent = "Loading models...";
+      }
+      modelFetchPromise = (async () => {
+        try {
+          const response = await fetch(
+            "https://openrouter.ai/api/v1/models?input_modalities=text&output_modalities=text",
+            {headers: openRouterHeaders(), cache: "no-store"}
+          );
+          if (!response.ok) {
+            throw new Error(`Model request failed with status ${response.status}`);
+          }
+          const catalog = await response.json();
+          if (!Array.isArray(catalog.data)) {
+            throw new Error("Model response did not contain a model list");
+          }
+          const fetchedModels = catalog.data
+            .filter(model =>
+              model.architecture?.input_modalities?.includes("text") &&
+              model.architecture?.output_modalities?.includes("text") &&
+              !model.id.endsWith(":batch") &&
+              !model.id.endsWith(":completion")
+            )
+            .map(model => ({
+              ...model,
+              is_free: Number(model.pricing?.prompt) === 0 &&
+                Number(model.pricing?.completion) === 0
+            }));
+          const fetchedAt = Date.now();
+          applyAvailableModels(fetchedModels);
+          try {
+            await setWorkspaceItem(MODEL_CATALOG_KEY, {
+              fetchedAt,
+              models: fetchedModels.map(({id, name, context_length, is_free}) => ({
+                id,
+                name,
+                context_length,
+                is_free
+              }))
+            });
+          } catch (error) {
+            console.error("Could not save the fetched model catalog:", error);
+          }
+        } catch (error) {
+          if (availableModels.length === 0) {
+            modelSelect.textContent = "Could not load models";
+            modelSelect.disabled = true;
+          }
+          console.error("Could not load models:", error);
+        } finally {
+          modelFetchPromise = null;
+        }
+      })();
+      return modelFetchPromise;
     };
     const createOAuthToken = () => {
       const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -2206,8 +2451,23 @@
       event.preventDefault();
       resetGraphView?.();
     });
+    const isCanvasScrollbarPointer = event => {
+      const bounds = canvas.getBoundingClientRect();
+      const borderRight = Number.parseFloat(getComputedStyle(canvas).borderRightWidth) || 0;
+      const borderBottom = Number.parseFloat(getComputedStyle(canvas).borderBottomWidth) || 0;
+      const onVerticalScrollbar = canvas.scrollHeight > canvas.clientHeight &&
+        canvas.offsetWidth > canvas.clientWidth &&
+        event.clientX >= bounds.left + canvas.clientLeft + canvas.clientWidth &&
+        event.clientX < bounds.right - borderRight;
+      const onHorizontalScrollbar = canvas.scrollWidth > canvas.clientWidth &&
+        canvas.offsetHeight > canvas.clientHeight &&
+        event.clientY >= bounds.top + canvas.clientTop + canvas.clientHeight &&
+        event.clientY < bounds.bottom - borderBottom;
+      return onVerticalScrollbar || onHorizontalScrollbar;
+    };
     canvas.addEventListener("pointerdown", event => {
-      if (event.button !== 0 || event.target.closest?.(".node")) return;
+      if (event.button !== 0 || event.target.closest?.(".node") ||
+        isCanvasScrollbarPointer(event)) return;
       event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
       canvas.classList.add("panning");
@@ -3165,10 +3425,8 @@
         if (isStoredGeneratedGraph(savedGraph)) {
           graph = savedGraph.graph;
           generatedGraphSource = savedGraph.source;
-          nodeSummaries = getStoredNodeSummaries(savedGraph.nodeSummaries, graph);
         } else if (isStoredGraph(savedGraph)) {
           graph = savedGraph;
-          nodeSummaries = {};
           const legacyDebug = await getWorkspaceItem("generated-debug");
           if (typeof legacyDebug?.graphSource === "string") {
             generatedGraphSource = legacyDebug.graphSource;
@@ -3188,11 +3446,13 @@
         console.error(`Could not restore ${restoreErrors.join("; ")}`);
       }
       uploadCodeButton.disabled = false;
-      generateButton.disabled = false;
+      workspaceReady = true;
+      updateGenerateButtonState();
     };
     restoreWorkspace().catch(error => {
       uploadCodeButton.disabled = false;
-      generateButton.disabled = false;
+      workspaceReady = true;
+      updateGenerateButtonState();
       console.error("Workspace restore failed:", error);
       renderGraph(graph).catch(layoutError => {
         console.error("Graph layout failed:", layoutError);

@@ -69,49 +69,24 @@ struct GenerationRequest {
 }
 
 #[derive(Deserialize)]
-struct SummaryRequest {
-    nodes: Vec<SummaryNode>,
-    edges: Vec<SummaryEdge>,
-    node_id: String,
-    files: Vec<FileInput>,
+struct ChatRequest {
+    messages: Vec<ConversationMessage>,
     model: String,
     api_key: String,
-    context_length: usize,
     referer: String,
-    #[serde(default)]
-    user_instructions: String,
 }
 
-#[derive(Deserialize)]
-struct SummaryNode {
-    id: String,
-    name: Option<String>,
-    #[serde(default)]
-    sources: Vec<graph_parser::SourceReference>,
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ConversationRole {
+    User,
+    Assistant,
 }
 
-#[derive(Deserialize)]
-struct SummaryEdge {
-    from: String,
-    to: String,
-}
-
-#[derive(Debug)]
-struct SummaryPrompt {
-    prompt: String,
-    estimated_bytes: usize,
-    context_limit_bytes: usize,
-    included_connected_nodes: usize,
-    total_connected_nodes: usize,
-}
-
-#[derive(Serialize)]
-struct SummaryResult {
-    summary: String,
-    estimated_bytes: usize,
-    context_limit_bytes: usize,
-    included_connected_nodes: usize,
-    total_connected_nodes: usize,
+#[derive(Clone, Deserialize, Serialize)]
+struct ConversationMessage {
+    role: ConversationRole,
+    content: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -205,14 +180,54 @@ pub async fn generate_multiagent(request: &str, progress: Function) -> Result<St
 }
 
 #[wasm_bindgen]
-pub async fn generate_node_summary(request: &str, progress: Function) -> Result<String, JsValue> {
-    let request = serde_json::from_str::<SummaryRequest>(request)
-        .map_err(|error| JsValue::from_str(&format!("Invalid summary request: {error}")))?;
-    let result = generate_summary(request, &progress)
+pub async fn complete_chat(request: &str) -> Result<String, JsValue> {
+    let request = serde_json::from_str::<ChatRequest>(request)
+        .map_err(|error| JsValue::from_str(&format!("Invalid chat request: {error}")))?;
+    if request.api_key.trim().is_empty() {
+        return Err(JsValue::from_str("Sign in to OpenRouter before chatting."));
+    }
+    if request.model.trim().is_empty() {
+        return Err(JsValue::from_str("Choose a model before chatting."));
+    }
+    if request.messages.is_empty() {
+        return Err(JsValue::from_str(
+            "A chat request must contain at least one message.",
+        ));
+    }
+
+    let response = reqwest::Client::new()
+        .post(OPENROUTER_CHAT_COMPLETIONS_URL)
+        .header("HTTP-Referer", &request.referer)
+        .header("X-OpenRouter-Title", "CodeMap")
+        .bearer_auth(&request.api_key)
+        .json(&serde_json::json!({
+            "model": request.model,
+            "messages": request.messages
+        }))
+        .send()
         .await
-        .map_err(|error| JsValue::from_str(&error))?;
-    serde_json::to_string(&result)
-        .map_err(|error| JsValue::from_str(&format!("Could not serialize node summary: {error}")))
+        .map_err(|error| JsValue::from_str(&format!("OpenRouter chat request failed: {error}")))?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        JsValue::from_str(&format!("Could not read OpenRouter chat response: {error}"))
+    })?;
+    if !status.is_success() {
+        return Err(JsValue::from_str(&format!(
+            "OpenRouter returned {status}: {body}"
+        )));
+    }
+    let completion: ChatCompletionResponse = serde_json::from_str(&body).map_err(|error| {
+        JsValue::from_str(&format!(
+            "Could not decode OpenRouter chat response: {error}"
+        ))
+    })?;
+    completion
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.message.content)
+        .filter(|content| !content.trim().is_empty())
+        .ok_or_else(|| JsValue::from_str("OpenRouter response contained no message content."))
 }
 
 fn filter_ignored(request: IgnoreRequest) -> serde_json::Value {
@@ -347,177 +362,6 @@ fn validate(request: Request) -> serde_json::Value {
         Ok(graph) => serde_json::json!({ "graph": graph }),
         Err(diagnostic) => serde_json::json!({ "error": diagnostic.correction_details() }),
     }
-}
-
-async fn generate_summary(
-    request: SummaryRequest,
-    progress: &Function,
-) -> Result<SummaryResult, String> {
-    if request.api_key.trim().is_empty() {
-        return Err("Sign in to OpenRouter before generating a summary.".to_owned());
-    }
-    if request.model.trim().is_empty() {
-        return Err("Choose a model before generating a summary.".to_owned());
-    }
-    if request.context_length == 0 {
-        return Err("The selected model does not provide a usable context length.".to_owned());
-    }
-    let prepared = build_summary_prompt(&request)?;
-    let estimate = serde_json::json!({
-        "estimated_bytes": prepared.estimated_bytes,
-        "context_limit_bytes": prepared.context_limit_bytes,
-        "included_connected_nodes": prepared.included_connected_nodes,
-        "total_connected_nodes": prepared.total_connected_nodes
-    });
-    progress
-        .call1(&JsValue::NULL, &JsValue::from_str(&estimate.to_string()))
-        .map_err(|error| {
-            error
-                .as_string()
-                .unwrap_or_else(|| "Browser progress callback failed.".to_owned())
-        })?;
-
-    let mut builder = reqwest::Client::new()
-        .post(OPENROUTER_CHAT_COMPLETIONS_URL)
-        .header("Content-Type", "application/json")
-        .header("HTTP-Referer", &request.referer)
-        .header("X-OpenRouter-Title", "CodeMap");
-    if !request.api_key.trim().is_empty() {
-        builder = builder.bearer_auth(&request.api_key);
-    }
-    let response = builder
-        .json(&serde_json::json!({
-            "model": request.model,
-            "messages": [{"role": "user", "content": prepared.prompt}],
-            "max_tokens": 1024
-        }))
-        .send()
-        .await
-        .map_err(|error| format!("OpenRouter summary request failed: {error}"))?;
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("Could not read OpenRouter summary response: {error}"))?;
-    if !status.is_success() {
-        return Err(format!("OpenRouter returned {status}: {body}"));
-    }
-    let completion: ChatCompletionResponse = serde_json::from_str(&body)
-        .map_err(|error| format!("Could not decode OpenRouter summary response: {error}"))?;
-    let summary = completion
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|choice| choice.message.content)
-        .filter(|content| !content.trim().is_empty())
-        .ok_or_else(|| "OpenRouter response contained no summary content.".to_owned())?;
-
-    Ok(SummaryResult {
-        summary,
-        estimated_bytes: prepared.estimated_bytes,
-        context_limit_bytes: prepared.context_limit_bytes,
-        included_connected_nodes: prepared.included_connected_nodes,
-        total_connected_nodes: prepared.total_connected_nodes,
-    })
-}
-
-fn build_summary_prompt(request: &SummaryRequest) -> Result<SummaryPrompt, String> {
-    let current_node = request
-        .nodes
-        .iter()
-        .find(|node| node.id == request.node_id)
-        .ok_or_else(|| format!("Node '{}' is not present in the graph.", request.node_id))?;
-    let connected_nodes = request
-        .nodes
-        .iter()
-        .filter(|candidate| {
-            candidate.id != request.node_id
-                && request.edges.iter().any(|edge| {
-                    edge.from == request.node_id && edge.to == candidate.id
-                        || edge.to == request.node_id && edge.from == candidate.id
-                })
-        })
-        .collect::<Vec<_>>();
-    let sources = request
-        .files
-        .iter()
-        .map(|file| (file.path.as_str(), file.contents.as_str()))
-        .collect::<std::collections::HashMap<_, _>>();
-    let prompt_instruction = format!(
-        "Generate a concise summary of ONLY the node {} ({}). Use the other listed nodes only as context for its direct relationships; do not summarize them.",
-        current_node.name.as_deref().unwrap_or(&current_node.id),
-        current_node.id
-    );
-    let user_instructions = request.user_instructions.trim();
-    let prompt_instruction = if user_instructions.is_empty() {
-        prompt_instruction
-    } else {
-        format!("{prompt_instruction}\nAdditional user instructions: {user_instructions}")
-    };
-    let context_limit_bytes = request.context_length.saturating_mul(90) / 100;
-    let mut contexts = Vec::new();
-    let mut included_connected_nodes = 0;
-
-    for (index, node) in std::iter::once(current_node)
-        .chain(connected_nodes.iter().copied())
-        .enumerate()
-    {
-        let mut chunks = Vec::new();
-        for reference in &node.sources {
-            let source = sources.get(reference.path.as_str()).ok_or_else(|| {
-                format!(
-                    "This graph's source file '{}' is not loaded in the browser.",
-                    reference.path
-                )
-            })?;
-            let lines = source.split('\n').collect::<Vec<_>>();
-            let start = reference.start.unwrap_or(1);
-            let end = reference.end.unwrap_or(lines.len());
-            if start == 0 || end < start || end > lines.len() {
-                return Err(format!(
-                    "Source line range for {} is outside the file.",
-                    reference.path
-                ));
-            }
-            let body = lines[start - 1..end]
-                .iter()
-                .map(|line| line.trim_end_matches('\r'))
-                .collect::<Vec<_>>()
-                .join("\n");
-            chunks.push(format!("```{}\n{}\n```", reference.path, body));
-        }
-        let node_context = format!("<{}>\n{}</{}>", node.id, chunks.join("\n\n"), node.id);
-        let mut candidate = contexts.clone();
-        candidate.push(node_context.clone());
-        candidate.push(prompt_instruction.clone());
-        let candidate_prompt = candidate.join("\n\n");
-        let candidate_bytes = candidate_prompt.len();
-        if candidate_bytes > context_limit_bytes {
-            if index == 0 {
-                return Err(format!(
-                    "The current node's source context is estimated at {candidate_bytes} bytes, exceeding 90% of the selected model's context window ({context_limit_bytes} bytes). Select a model with a larger context window."
-                ));
-            }
-            break;
-        }
-        contexts.push(node_context);
-        if index > 0 {
-            included_connected_nodes += 1;
-        }
-    }
-
-    let prompt = contexts
-        .into_iter()
-        .chain(std::iter::once(prompt_instruction))
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    Ok(SummaryPrompt {
-        estimated_bytes: prompt.len(),
-        context_limit_bytes,
-        included_connected_nodes,
-        total_connected_nodes: connected_nodes.len(),
-        prompt,
-    })
 }
 
 async fn generate(
@@ -1166,103 +1010,29 @@ Main["<name>Main</name><source>missing.rs:full</source>"]
         );
     }
 
-    fn summary_request(context_length: usize) -> SummaryRequest {
-        SummaryRequest {
-            nodes: vec![
-                SummaryNode {
-                    id: "Current".to_owned(),
-                    name: Some("Current node".to_owned()),
-                    sources: vec![graph_parser::SourceReference {
-                        path: "current.rs".to_owned(),
-                        start: None,
-                        end: None,
-                    }],
-                },
-                SummaryNode {
-                    id: "First".to_owned(),
-                    name: None,
-                    sources: vec![graph_parser::SourceReference {
-                        path: "first.rs".to_owned(),
-                        start: None,
-                        end: None,
-                    }],
-                },
-                SummaryNode {
-                    id: "Second".to_owned(),
-                    name: None,
-                    sources: vec![graph_parser::SourceReference {
-                        path: "second.rs".to_owned(),
-                        start: None,
-                        end: None,
-                    }],
-                },
-            ],
-            edges: vec![
-                SummaryEdge {
-                    from: "Current".to_owned(),
-                    to: "First".to_owned(),
-                },
-                SummaryEdge {
-                    from: "Second".to_owned(),
-                    to: "Current".to_owned(),
-                },
-            ],
-            node_id: "Current".to_owned(),
-            files: vec![
-                FileInput {
-                    path: "current.rs".to_owned(),
-                    contents: "current".to_owned(),
-                },
-                FileInput {
-                    path: "first.rs".to_owned(),
-                    contents: "first".to_owned(),
-                },
-                FileInput {
-                    path: "second.rs".to_owned(),
-                    contents: "x".repeat(1000),
-                },
-            ],
-            model: "test/model".to_owned(),
-            api_key: "test-key".to_owned(),
-            context_length,
-            referer: "https://example.com".to_owned(),
-            user_instructions: String::new(),
-        }
-    }
-
     #[test]
-    fn summary_context_keeps_current_node_then_fits_connected_nodes_in_graph_order() {
-        let prepared = build_summary_prompt(&summary_request(400)).unwrap();
+    fn chat_request_preserves_the_full_message_history_in_order() {
+        let request = serde_json::from_str::<ChatRequest>(
+            r#"{
+                "messages": [
+                    {"role": "user", "content": "first request"},
+                    {"role": "assistant", "content": "first answer"},
+                    {"role": "user", "content": "follow-up"}
+                ],
+                "model": "test/model",
+                "api_key": "test-key",
+                "referer": "https://example.com"
+            }"#,
+        )
+        .unwrap();
 
-        assert!(prepared.prompt.starts_with("<Current>"));
-        assert!(prepared.prompt.contains("<First>"));
-        assert!(!prepared.prompt.contains("<Second>"));
-        assert_eq!(prepared.included_connected_nodes, 1);
-        assert_eq!(prepared.total_connected_nodes, 2);
-        assert!(prepared.estimated_bytes <= prepared.context_limit_bytes);
-    }
-
-    #[test]
-    fn summary_context_rejects_current_node_when_it_exceeds_byte_budget() {
-        let mut request = summary_request(100);
-        request.files[0].contents = "x".repeat(1000);
-
-        let error = build_summary_prompt(&request).unwrap_err();
-
-        assert!(error.contains("current node's source context"));
-    }
-
-    #[test]
-    fn summary_context_includes_user_instructions() {
-        let mut request = summary_request(400);
-        request.user_instructions = "Focus on error handling.".to_owned();
-
-        let prepared = build_summary_prompt(&request).unwrap();
-
-        assert!(
-            prepared
-                .prompt
-                .contains("Additional user instructions: Focus on error handling.")
+        assert_eq!(
+            serde_json::to_value(request.messages).unwrap(),
+            serde_json::json!([
+                {"role": "user", "content": "first request"},
+                {"role": "assistant", "content": "first answer"},
+                {"role": "user", "content": "follow-up"}
+            ])
         );
     }
 }
