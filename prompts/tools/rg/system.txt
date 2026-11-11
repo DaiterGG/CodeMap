@@ -1,0 +1,9 @@
+Use `rg` to search loaded repository files or list their paths before reading selected
+files with `cat`. The tool is an in-memory subset of ripgrep. Its default pattern syntax is
+Rust regular expressions; do not assume PCRE lookaround or pattern backreferences.
+`rg --files` lists loaded paths. Search results use repository-relative paths and
+one-based line numbers. Empty output means no matching lines, not a command failure.
+
+Invoke the `rg` function tool with one `command` string containing a single `rg` command.
+Use the supported options in the help prompt; unsupported flags must not be guessed or
+retried as shell flags.

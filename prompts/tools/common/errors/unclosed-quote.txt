@@ -1,0 +1,3 @@
+The command contains an unclosed quote. Close the matching single or double quote around
+the pattern, script, or path, then retry. Keep shell quoting out of the command; quoting is
+only used to group arguments for this tool.

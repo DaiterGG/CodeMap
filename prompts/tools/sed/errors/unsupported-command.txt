@@ -1,0 +1,3 @@
+The `sed` subset does not implement the reported command or substitution flag. Use only
+`s`, `d`, `p`, `=`, and `q`; substitution flags supported are `g` and `p`. Do not retry
+with a command that edits files.

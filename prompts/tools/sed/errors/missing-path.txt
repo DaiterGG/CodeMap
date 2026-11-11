@@ -1,0 +1,2 @@
+The `sed` command needs at least one file path after its script. Use `rg --files` to find
+loaded repository paths, then retry with an exact path.

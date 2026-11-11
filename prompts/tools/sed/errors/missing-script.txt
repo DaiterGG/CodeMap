@@ -1,0 +1,2 @@
+The `sed` command has no script. Add a supported script before the file paths, or use
+`-e SCRIPT` to provide one explicitly. For example: `sed -n '1,5p' src/main.rs`.

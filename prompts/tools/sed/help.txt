@@ -1,0 +1,28 @@
+Usage: sed [OPTIONS] SCRIPT FILE...
+       sed [OPTIONS] -e SCRIPT FILE...
+
+Specify one or more exact repository-relative file paths. Quote scripts containing spaces
+and paths containing whitespace. Each file is processed in order with line numbers
+continuing across the requested files. Output is returned as text; source files are never
+changed. Standard input, absolute paths, traversal outside the repository, and paths not
+loaded in CodeMap are unavailable.
+
+Supported options:
+- `-n`: suppress automatic printing; use the `p` command to print selected lines
+- `-E`, `-r`: use extended regular expressions
+- `-e SCRIPT`, `--expression=SCRIPT`: add a script expression
+- `--`: end option parsing
+
+Supported script commands:
+- `s/REGEX/REPLACEMENT/` replaces the first match on each line
+- `s/REGEX/REPLACEMENT/g` replaces all matches on each line; `p` flag prints changed lines
+- `d`: delete selected lines
+- `p`: print selected lines (typically with `-n`)
+- `=`: print the current one-based line number
+- `q`: stop processing after the current line
+
+Commands may have a numeric, `$` (last line), or `/REGEX/` address, or a range of two
+addresses separated by a comma (for example `1,5d`, `/TODO/p`, or `2,$s/foo/bar/g`).
+Separate commands with semicolons. In replacement text, `&` means the whole match and
+`\1` through `\9` refer to capture groups. Basic regular expressions are used by default;
+use `-E` for extended expressions. In-place editing (`-i`) is not supported.

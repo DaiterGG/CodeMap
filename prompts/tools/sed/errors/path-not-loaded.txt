@@ -1,0 +1,2 @@
+The requested file is not loaded in CodeMap. Use `rg --files` to inspect available paths,
+then retry with the exact repository-relative path.

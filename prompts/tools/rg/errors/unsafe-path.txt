@@ -1,0 +1,2 @@
+The requested path escapes the loaded repository or is absolute. Retry only with a
+repository-relative path that stays within CodeMap's loaded project.

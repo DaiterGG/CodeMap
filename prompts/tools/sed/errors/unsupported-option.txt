@@ -1,0 +1,2 @@
+The `sed` tool does not support the reported option. Use only `-n`, `-E` / `-r`, `-e`,
+`--expression=`, and `--`. In-place editing is intentionally unavailable.

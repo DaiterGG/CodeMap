@@ -1,0 +1,3 @@
+The command does not start with the requested tool name. Retry using the tool's command
+name exactly (`rg`, `cat`, or `sed`) and follow that tool's usage syntax. Do not substitute
+a different command or add shell syntax.

@@ -1,0 +1,2 @@
+There are no loaded source files to search. Ask the user to load a repository or files in
+CodeMap, then retry. Do not claim that the repository was searched.

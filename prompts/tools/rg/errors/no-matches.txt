@@ -1,0 +1,2 @@
+The search completed successfully but found no matching lines. Report that result as-is.
+Do not treat empty output as malformed command syntax or silently broaden the search.

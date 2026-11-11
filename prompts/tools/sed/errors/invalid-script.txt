@@ -1,0 +1,3 @@
+The `sed` script is incomplete or malformed. Check that each command has an operation, the
+address range has both endpoints, and each substitution has matching delimiters:
+`s/REGEX/REPLACEMENT/`. Separate multiple commands with semicolons.

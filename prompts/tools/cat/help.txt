@@ -1,0 +1,18 @@
+Usage: cat [OPTION]... FILE...
+
+Specify one or more exact repository-relative file paths. Quote paths containing spaces.
+Files are concatenated in the order requested. Standard input (`-`), absolute paths,
+traversal outside the repository, and files not loaded in CodeMap are unavailable.
+
+Supported options:
+- `-n`, `--number`: number all output lines
+- `-b`, `--number-nonblank`: number non-empty lines
+- `-s`, `--squeeze-blank`: collapse repeated empty lines
+- `-E`, `--show-ends`: show `$` at line endings
+- `-T`, `--show-tabs`: show tabs as `^I`
+- `-v`, `--show-nonprinting`: show control characters visibly
+- `-e`: equivalent to `-vE`; `-t`: equivalent to `-vT`; `-A`: equivalent to `-vET`
+- Short options may be combined (for example `-nE`); `--` ends option parsing
+
+This tool only reads text files loaded in the current CodeMap workspace. It does not
+execute a shell.

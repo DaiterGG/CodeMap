@@ -1,0 +1,3 @@
+The `rg` tool does not support the reported option. Remove it or replace it with an option
+listed in the `rg` help. Do not assume the full installed ripgrep CLI or its optional
+engines are available.

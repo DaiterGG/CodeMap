@@ -1,0 +1,3 @@
+In-place editing is not supported. The `sed` tool returns transformed text without changing
+the source file. If the user asked to modify the repository, use the project's normal
+editing workflow instead of `sed`.

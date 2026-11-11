@@ -1,0 +1,3 @@
+The `rg` command has no search pattern. Add a non-empty pattern after the options, for
+example `rg -n 'Widget' src/`. If the intent is to list files instead, use `rg --files`
+without a pattern.

@@ -1,0 +1,19 @@
+Usage: rg [OPTIONS] PATTERN [PATH ...]
+       rg --files [OPTIONS] [PATH ...]
+
+Supported options:
+- `-i`, `--ignore-case`; `-s`, `--case-sensitive`
+- `-v`, `--invert-match`
+- `-n`, `--line-number` (default); `-N`, `--no-line-number`
+- `-F`, `--fixed-strings`; `-w`, `--word-regexp`; `-x`, `--line-regexp`
+- `-o`, `--only-matching`
+- `-l`, `--files-with-matches`; `--files-without-match`; `-c`, `--count`
+- `-g GLOB`, `--glob=GLOB`; `--iglob=GLOB`; prefix a glob with `!` to exclude it
+- `-A N`, `-B N`, `-C N`, `--after-context=N`, `--before-context=N`, `--context=N`
+- `--hidden` to include hidden paths; hidden paths are excluded by default
+- `-f`, `--files` to list loaded paths; supports path and glob filters
+- `--no-ignore` is accepted but cannot restore files omitted when the workspace was loaded
+- `--` ends option parsing; quote patterns or paths containing whitespace
+
+Patterns use Rust's regular-expression syntax by default. Patterns are matched line by
+line. The tool only searches loaded text files. It does not execute a shell.

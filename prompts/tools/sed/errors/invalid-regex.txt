@@ -1,0 +1,3 @@
+A regular expression in the `sed` script is invalid. Fix its syntax for the selected mode:
+basic regular expressions are the default; `-E` enables extended regular expressions.
+Pattern syntax is not PCRE.

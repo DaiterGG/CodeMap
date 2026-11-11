@@ -1,0 +1,8 @@
+When a command tool returns an error, use the exact diagnostic and the tool help to correct
+the command. Change only the argument or syntax that caused the error, then retry the same
+tool once. Do not invent a shell workaround, try to escape the loaded repository, or report
+an unsuccessful command as successful. If the requested operation is unsupported, explain
+the limitation and offer a supported alternative.
+
+An empty successful result is not necessarily an error. For search tools, report that there
+were no matches rather than changing the user's search without permission.

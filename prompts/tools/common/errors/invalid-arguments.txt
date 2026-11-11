@@ -1,0 +1,3 @@
+The function tool arguments are not valid JSON for this tool, or the required `command`
+field is missing or empty. Retry with one JSON object containing a non-empty `command`
+string, for example `{"command":"rg --files"}`.

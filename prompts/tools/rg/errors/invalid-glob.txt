@@ -1,0 +1,3 @@
+A `-g` / `--glob` filter is invalid. Supply a non-empty glob, quote it so it remains one
+argument, and check its separators and brackets. Prefix a glob with `!` only to exclude
+matching paths.

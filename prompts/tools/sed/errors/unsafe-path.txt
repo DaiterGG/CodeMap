@@ -1,0 +1,2 @@
+The requested path is absolute or escapes the loaded repository. Retry using a safe
+repository-relative path. Do not try to bypass this restriction.

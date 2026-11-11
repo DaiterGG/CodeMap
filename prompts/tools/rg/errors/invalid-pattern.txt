@@ -1,0 +1,3 @@
+The search pattern is not a valid Rust regular expression. Correct its regex syntax, or
+use `-F` / `--fixed-strings` if the intended pattern is literal text. Rust regex does not
+support PCRE lookaround or pattern backreferences.

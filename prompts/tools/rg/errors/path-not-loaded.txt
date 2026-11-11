@@ -1,0 +1,3 @@
+The requested path does not match any loaded repository file. Use `rg --files` to inspect
+the available paths, then retry with an exact repository-relative path or a directory
+prefix. Do not try an absolute path or a parent-directory path.

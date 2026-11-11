@@ -1,0 +1,2 @@
+The `cat` tool does not support the reported option. Remove it or select one of the flags
+listed in the `cat` help. This tool is for reading loaded content, not editing files.

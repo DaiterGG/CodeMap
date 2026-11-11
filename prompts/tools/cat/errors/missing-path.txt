@@ -1,0 +1,2 @@
+The `cat` command needs at least one file path. First use `rg --files` to find loaded
+repository paths, then call `cat` with one or more exact paths.

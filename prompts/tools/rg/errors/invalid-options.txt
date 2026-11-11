@@ -1,0 +1,3 @@
+The selected `rg` options cannot be combined. Follow the diagnostic, remove the conflicting
+option, and retry. In particular, `--only-matching` cannot be used with context or
+`--invert-match`, and `--count` cannot be combined with file-listing options.
