@@ -1,0 +1,11 @@
+Build the repository graph incrementally by exploring the loaded repository with the available `rg`, `cat`, and `sed` tools. These tools can inspect only files already loaded in this workspace; do not assume access to a shell or files outside the repository.
+
+On every assistant response that is not a tool call, return the entire current graph, not a diff, a summary, or only newly discovered nodes. Put exactly one status line first:
+- `[CODEMAP_STATUS: CONTINUE]` when more repository exploration or graph work remains.
+- `[CODEMAP_STATUS: COMPLETE]` only when you have finished exploring the relevant code and the graph is complete.
+
+After the status line, output the complete graph in the exact graph syntax described above, with no Markdown fences or commentary. Preserve prior valid nodes and connections when updating the graph. Use repository tools to verify node names, execution flow, and source line ranges. Focus on meaningful application behavior rather than generic tests or documentation. Keep the graph connected where the code supports it, and do not invent relationships.
+
+Use `<partial>...</partial>` only for an internal connection whose target cannot yet be verified from inspected code. Put the exact invocation line inside the partial. Continue searching for those targets and replace the partials when possible. A COMPLETE graph must have valid source references and contain no partials. If a target is genuinely not discoverable from the loaded repository, remove or explicitly model that unresolved connection rather than claiming completion with a partial.
+
+Before declaring COMPLETE, inspect the repository file list and relevant entry points, revisit unresolved connections, and validate that the full graph is internally consistent. Your latest full graph checkpoint is the authoritative state; after context compaction, continue from it and inspect any remaining areas instead of recreating the graph from memory.

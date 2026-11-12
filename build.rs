@@ -15,6 +15,7 @@ const EMPTY_GRAPH_JSON: &str = r#"{"direction":"TD","name":null,"description":nu
 fn main() {
     println!("cargo:rerun-if-changed=src/page_template.rs");
     println!("cargo:rerun-if-changed=public/index.html");
+    println!("cargo:rerun-if-changed=public/styles.css");
     println!("cargo:rerun-if-changed=public/vendor/elk.bundled.js");
     println!("cargo:rerun-if-changed=public/vendor/elk.LICENSE");
     println!("cargo:rerun-if-changed=public/vendor/elkjs-libavoid.bundled.js");
@@ -22,6 +23,13 @@ fn main() {
     println!("cargo:rerun-if-changed=public/vendor/elkjs-libavoid.LICENSE");
     println!("cargo:rerun-if-changed=public/vendor/libavoid-js.LICENSE");
     println!("cargo:rerun-if-changed=public/vendor/highlight.min.js");
+    println!("cargo:rerun-if-changed=public/vendor/MARKDOWN_IT_VERSION.txt");
+    println!("cargo:rerun-if-changed=public/vendor/markdown-it.min.js");
+    println!("cargo:rerun-if-changed=public/vendor/markdown-it.LICENSE");
+    println!("cargo:rerun-if-changed=public/vendor/DOMPURIFY_VERSION.txt");
+    println!("cargo:rerun-if-changed=public/vendor/purify.min.js");
+    println!("cargo:rerun-if-changed=public/vendor/purify.LICENSE");
+    println!("cargo:rerun-if-changed=public/vendor/purify.LICENSE-MPL");
     println!("cargo:rerun-if-changed=prompts/nodegraph.txt");
     println!("cargo:rerun-if-changed=prompts/tools/common/system.txt");
     println!("cargo:rerun-if-changed=prompts/tools/common/error-recovery.txt");

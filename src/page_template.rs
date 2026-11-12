@@ -2,6 +2,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 
 const TEMPLATE: &str = include_str!("../public/index.html");
+const CSS: &str = include_str!("../public/styles.css");
 const ELK_JS: &str = include_str!("../public/vendor/elk.bundled.js");
 const ELK_LICENSE: &str = include_str!("../public/vendor/elk.LICENSE");
 const LIBAVOID_JS: &str = include_str!("../public/vendor/elkjs-libavoid.bundled.js");
@@ -9,6 +10,11 @@ const LIBAVOID_WASM: &[u8] = include_bytes!("../public/vendor/libavoid.wasm");
 const LIBAVOID_LICENSE: &str = include_str!("../public/vendor/elkjs-libavoid.LICENSE");
 const LIBAVOID_JS_LICENSE: &str = include_str!("../public/vendor/libavoid-js.LICENSE");
 const HIGHLIGHT_JS: &str = include_str!("../public/vendor/highlight.min.js");
+const MARKDOWN_IT_JS: &str = include_str!("../public/vendor/markdown-it.min.js");
+const MARKDOWN_IT_LICENSE: &str = include_str!("../public/vendor/markdown-it.LICENSE");
+const PURIFY_JS: &str = include_str!("../public/vendor/purify.min.js");
+const PURIFY_LICENSE: &str = include_str!("../public/vendor/purify.LICENSE");
+const PURIFY_MPL_LICENSE: &str = include_str!("../public/vendor/purify.LICENSE-MPL");
 
 pub fn render_page_html(
     graph_details: &str,
@@ -29,6 +35,7 @@ pub fn render_page_html(
     let default_api_key_second_json = json_script_value(default_api_key_second);
 
     TEMPLATE
+        .replace("{{CSS}}", CSS)
         .replace("{{GRAPH_DETAILS}}", graph_details)
         .replace("{{GRAPH_JSON}}", graph_json)
         .replace("{{SOURCE_JSON}}", source_json)
@@ -39,6 +46,17 @@ pub fn render_page_html(
         .replace("{{LIBAVOID_LICENSE}}", &escape_html(LIBAVOID_LICENSE))
         .replace("{{LIBAVOID_JS_LICENSE}}", &escape_html(LIBAVOID_JS_LICENSE))
         .replace("{{HIGHLIGHT_JS}}", HIGHLIGHT_JS)
+        .replace("{{MARKDOWN_IT_JS}}", MARKDOWN_IT_JS)
+        .replace(
+            "{{MARKDOWN_IT_LICENSE}}",
+            &escape_html_license(MARKDOWN_IT_LICENSE),
+        )
+        .replace("{{PURIFY_JS}}", PURIFY_JS)
+        .replace("{{PURIFY_LICENSE}}", &escape_html_license(PURIFY_LICENSE))
+        .replace(
+            "{{PURIFY_MPL_LICENSE}}",
+            &escape_html_license(PURIFY_MPL_LICENSE),
+        )
         .replace("{{CODEMAP_BINDINGS_JS}}", codemap_bindings_js)
         .replace("{{CODEMAP_WASM}}", &STANDARD.encode(codemap_wasm))
         .replace("{{SYSTEM_PROMPT_JSON}}", &system_prompt_json)
@@ -65,4 +83,13 @@ fn escape_html(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+fn escape_html_license(value: &str) -> String {
+    let normalized = value
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    escape_html(&normalized)
 }
