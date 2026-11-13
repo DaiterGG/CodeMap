@@ -14076,6 +14076,44 @@ function a(e,t){return n(e)||r(e,t)||o(e,t)||i()}function o(e,n){if(e){if(typeof
         path: (file.webkitRelativePath || file.name).replaceAll("\\", "/")
       }))
       .filter(({path}) => !path.split("/").includes(".git"));
+    const readDroppedFileEntry = async entry => {
+      if (entry.isFile) {
+        const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+        return [{
+          name: file.name,
+          webkitRelativePath: entry.fullPath.replace(/^\/+/, ""),
+          arrayBuffer: () => file.arrayBuffer()
+        }];
+      }
+      if (!entry.isDirectory) return [];
+
+      const reader = entry.createReader();
+      const files = [];
+      while (true) {
+        const entries = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        if (entries.length === 0) return files;
+        const nestedFiles = await Promise.all(entries.map(readDroppedFileEntry));
+        files.push(...nestedFiles.flat());
+      }
+    };
+    const readDroppedFiles = async dataTransfer => {
+      const files = [];
+      const entries = [];
+      for (const item of Array.from(dataTransfer.items || [])) {
+        if (item.kind !== "file") continue;
+        const entry = item.webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+        else {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (entries.length > 0) {
+        const nestedFiles = await Promise.all(entries.map(readDroppedFileEntry));
+        files.push(...nestedFiles.flat());
+      }
+      return files.length > 0 ? files : dataTransfer.files;
+    };
     const decodeUtf8File = async file => {
       const bytes = await file.arrayBuffer();
       try {
@@ -14272,9 +14310,12 @@ function a(e,t){return n(e)||r(e,t)||o(e,t)||i()}function o(e,n){if(e){if(typeof
     uploadDialog.addEventListener("drop", event => {
       event.preventDefault();
       uploadDropzone.classList.remove("dragging");
-      readProjectFiles(event.dataTransfer.files).catch(error => {
-        uploadPickerStatus.textContent = error.message || "Could not read the dropped files.";
-      });
+      uploadPickerStatus.textContent = "Scanning dropped files...";
+      readDroppedFiles(event.dataTransfer)
+        .then(readProjectFiles)
+        .catch(error => {
+          uploadPickerStatus.textContent = error.message || "Could not read the dropped files.";
+        });
     });
     const handleGenerationProgress = status => {
       let event;
