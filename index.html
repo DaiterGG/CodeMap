@@ -14260,14 +14260,16 @@ function a(e,t){return n(e)||r(e,t)||o(e,t)||i()}function o(e,n){if(e){if(typeof
       });
     });
     uploadCloseButton.addEventListener("click", () => uploadDialog.close());
-    uploadDropzone.addEventListener("dragover", event => {
+    uploadDialog.addEventListener("dragover", event => {
       event.preventDefault();
       uploadDropzone.classList.add("dragging");
     });
-    uploadDropzone.addEventListener("dragleave", () => {
-      uploadDropzone.classList.remove("dragging");
+    uploadDialog.addEventListener("dragleave", event => {
+      if (!(event.relatedTarget instanceof Node) || !uploadDialog.contains(event.relatedTarget)) {
+        uploadDropzone.classList.remove("dragging");
+      }
     });
-    uploadDropzone.addEventListener("drop", event => {
+    uploadDialog.addEventListener("drop", event => {
       event.preventDefault();
       uploadDropzone.classList.remove("dragging");
       readProjectFiles(event.dataTransfer.files).catch(error => {

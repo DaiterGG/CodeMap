@@ -1030,61 +1030,11 @@
     const isStoredGeneratedGraph = value => value && typeof value === "object" &&
       isStoredGraph(value.graph) && typeof value.source === "string";
     const normalizeSelectedFiles = fileList => Array.from(fileList)
-      .map(selectedFile => {
-        const file = selectedFile.file || selectedFile;
-        return {
-          file,
-          path: (selectedFile.file ? selectedFile.path : file.webkitRelativePath || file.name)
-            .replaceAll("\\", "/")
-        };
-      })
+      .map(file => ({
+        file,
+        path: (file.webkitRelativePath || file.name).replaceAll("\\", "/")
+      }))
       .filter(({path}) => !path.split("/").includes(".git"));
-    const readDroppedFileEntry = entry =>
-      new Promise((resolve, reject) => entry.file(resolve, reject));
-    const readDroppedDirectoryEntries = reader =>
-      new Promise((resolve, reject) => reader.readEntries(resolve, reject));
-    const collectDroppedEntryFiles = async (entry, parentPath = "") => {
-      if (entry.name === ".git") return [];
-      if (entry.isFile) {
-        return [{
-          file: await readDroppedFileEntry(entry),
-          path: `${parentPath}${entry.name}`
-        }];
-      }
-      if (!entry.isDirectory) return [];
-
-      const reader = entry.createReader();
-      const files = [];
-      while (true) {
-        const entries = await readDroppedDirectoryEntries(reader);
-        if (entries.length === 0) break;
-        for (const child of entries) {
-          files.push(...await collectDroppedEntryFiles(child, `${parentPath}${entry.name}/`));
-        }
-      }
-      return files;
-    };
-    const collectDroppedFiles = async dataTransfer => {
-      const fallbackFiles = Array.from(dataTransfer.files || []);
-      const items = Array.from(dataTransfer.items || []);
-      if (items.length === 0) return fallbackFiles;
-      const droppedItems = items
-        .filter(item => item.kind === "file")
-        .map(item => {
-          const entry = item.webkitGetAsEntry?.();
-          return {entry, file: entry ? null : item.getAsFile()};
-        });
-
-      const files = [];
-      for (const {entry, file} of droppedItems) {
-        if (entry) {
-          files.push(...await collectDroppedEntryFiles(entry));
-        } else if (file) {
-          files.push({file, path: file.name});
-        }
-      }
-      return files.length > 0 ? files : fallbackFiles;
-    };
     const decodeUtf8File = async file => {
       const bytes = await file.arrayBuffer();
       try {
@@ -1281,11 +1231,9 @@
     uploadDialog.addEventListener("drop", event => {
       event.preventDefault();
       uploadDropzone.classList.remove("dragging");
-      collectDroppedFiles(event.dataTransfer)
-        .then(readProjectFiles)
-        .catch(error => {
-          uploadPickerStatus.textContent = error.message || "Could not read the dropped files.";
-        });
+      readProjectFiles(event.dataTransfer.files).catch(error => {
+        uploadPickerStatus.textContent = error.message || "Could not read the dropped files.";
+      });
     });
     const handleGenerationProgress = status => {
       let event;
